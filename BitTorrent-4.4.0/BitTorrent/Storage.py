@@ -231,13 +231,13 @@ class Storage(object):
                 line = resumefile.readline()
                 size, mtime = line.split()[:2] # allow adding extra fields
                 size = int(size)
-                mtime = float(mtime)
+                mtime = int(float(mtime))
             if os.path.exists(filename):
                 fsize = os.path.getsize(filename)
             else:
                 raise BTFailure(_("Another program appears to have moved, renamed, or deleted the file, "
                                   "or %s may have crashed last time it was run.") % app_name)
-            if fsize > 0 and mtime != os.path.getmtime(filename):
+            if fsize > 0 and mtime != int(os.path.getmtime(filename)):
                 raise BTFailure(_("Another program appears to have modified the file, "
                                   "or %s may have crashed last time it was run.") % app_name)
             if size != fsize:
