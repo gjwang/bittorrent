@@ -231,7 +231,7 @@ class Storage(object):
                 line = resumefile.readline()
                 size, mtime = line.split()[:2] # allow adding extra fields
                 size = int(size)
-                mtime = int(float(mtime))
+                mtime = float(mtime)
             if os.path.exists(filename):
                 fsize = os.path.getsize(filename)
             else:
