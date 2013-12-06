@@ -43,7 +43,7 @@ from twisted.internet import reactor
 import json
 import cgi
 
-from bittorrent_webserver import HelloResource, FormPage, Ping, PutTask
+from bittorrent_webserver import HelloResource, FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
 
 
 def fmttime(n):
@@ -336,12 +336,18 @@ class MultiDL():
     def shutdown(self, torrentfile = None):
         #TODO: get the hash_info to avoid the same file with two torrent file
         print "MultiDl.shutdown"
-        if torrentfile:
-            self.dls[torrentfile].shutdown()
-        else:
-            #shutdown the all downloads
-            for dl in self.dls.values():
-                dl.shutdown()                        
+        try:
+            if torrentfile and self.dls.has_key(torrentfile):
+                self.dls[torrentfile].shutdown()
+                del self.dls[torrentfile]
+            else:
+                #shutdown the all downloads
+                for dl in self.dls.values():
+                    dl.shutdown()
+
+                self.dls.clear()
+        except Exception as e:
+            print "shutdown %s exception: %s" % (torrentfile, e)
 
     def global_error(self, level, text):
         #self.d.error(text)
@@ -384,6 +390,9 @@ if __name__ == '__main__':
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
     root.putChild("puttask", PutTask(taskqueue, multidl))
+    root.putChild("shutdowntask", ShutdownTask(taskqueue, multidl))
+    root.putChild("maketorrent", MakeTorrent(taskqueue, multidl))
+
     
     factory = Site(root)
     #from twisted.internet import pollreactor
