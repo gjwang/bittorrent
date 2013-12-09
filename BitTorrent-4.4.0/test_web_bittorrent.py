@@ -46,8 +46,7 @@ def httppostToServer(url, data):
 
 
 if __name__ == '__main__':
-    peerurl = 'http://223.82.137.218:8100'
-    #peerurl = 'http://127.0.0.1:8090'
+    peerurl = 'http://127.0.0.1:8090'
     puttaskurl = peerurl + '/puttask'
 
     taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
