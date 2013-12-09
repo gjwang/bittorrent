@@ -30,11 +30,12 @@ from conf import wwwroot, maketorent_config, response_msg, http_prefix
 
 
 class AsyncDownloader():
-    def __init__(self, topdir, multidl, url, request, filesize = None, localfilename = None):
+    def __init__(self, topdir, multidl, url, request, msg, filesize = None, localfilename = None):
         self.topdir = topdir
         self.multidl = multidl
         self.url = url
         self.request = request
+        self.msg = msg
         self.filesize = filesize
 
         if localfilename is None:
@@ -42,41 +43,55 @@ class AsyncDownloader():
         else:
             self.localfilename = localfilename
 
-    def retRequest(self, msg):
-        self.request.write(msg.encode('utf-8'))
-        self.request.finish()
+    def return_request(self, request, msg):
+        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        request.write(msg)
+        request.finish()
 
-    def download_done(self, context):
+    def download_done(self, context, msg):
         if splitext(self.localfilename)[1].lower() == '.torrent':
-            self.add_task_to_multidl()
+            self.add_task_to_multidl(msg)
         else:
-            msg = ''.join(['download: ', self.url, ' OK'])
-            self.retRequest(msg)
+            args = {}
+            args[self.url] = self.localfilename
+            args[''] = self.localfilename
+            
+            msg[args] = args
+            msg['result'] = 'success'
+
+            return_request(self.request, msg)
 
     def error_handler(self, error, msg = None):
         if msg is None:
-            msg = ''.join(['download: ', self.url, ' failed: ', str(error)])
+            msg = dict(self.msg)#make a new copy of response_msg
         
-        self.retRequest(msg)
+        msg['result'] = 'failed'         
+        msg['trackback'] = "%s" % str(error)        
+        self.return_request(self.request, msg)
 
-    def add_task_to_multidl(self):
-        msg = ''.join(['unknown error while add ', self.url, ' to download: '])
+    def add_task_to_multidl(self, msg):
         try:
             if self.multidl.dls.has_key(self.localfilename):
                 #TODO: torrentfile is downloading or not
-                print '%s is downloading' % self.localfilename
-                msg = ''.join([self.url, ' is already downloading'])        
+                print '%s is downloading' % self.localfilename                        
+                msg['state'] = 'downloading'
+                msg['result'] = 'success'
             else:
                 try:
                     dl = self.multidl.add_dl(self.localfilename)
                     dl.start() 
-                    msg = ''.join([self.url, ' is beginning to download'])
+                    msg['state'] = 'beginning'
+                    msg['result'] = 'success'
                 except Exception as e:
-                    msg = ''.join(['add ', self.url, ' to multidl error: ', str(e)])            
-        except Exception as e:
-            msg.join(str(e))
+                    msg['result'] = 'failed'
+                    msg['trackback'] = str(e)
 
-        self.retRequest(msg)
+        except Exception as e:
+            msg['result'] = 'failed'
+            msg['trackback'] = str(e)
+
+        self.return_request(self.request, msg)
+
 
     def makedir(self):
         dstdirname = dirname(self.localfilename)
@@ -86,21 +101,21 @@ class AsyncDownloader():
         except Exception, exc:
             #logger.info("down: %s to %s failed: %s", url, self.localfilename, exc)
             print "mkdir: %s failed: %s"%(dstdirname, exc)            
-            msg = "mkdir: %s failed: %s"%(dstdirname, exc)
+            msg = {}
+            msg['result'] = 'failed'
+            msg['trackback'] = str(exc)
             self.error_handler(exc, msg)
             return False
         else:
             return True
-
 
     def start(self, redownload=True):
         if self.makedir() == False:
             return 
 
         deferred = downloadPage(bytes(self.url), self.localfilename)
-        deferred.addCallback(self.download_done)
-
-        deferred.addErrback(self.error_handler)
+        deferred.addCallback(self.download_done, self.msg)
+        deferred.addErrback(self.error_handler, self.msg)
 
 
 
@@ -144,6 +159,14 @@ class PutTask(Resource):
         self.taskqueue = taskqueue
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
+        self.response_msg = response_msg
+
+
+    def return_request(self, request, msg):
+        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        request.write(msg)
+        request.finish()
+
         
     def render_GET(self, request):
         print "recv get request"
@@ -160,6 +183,8 @@ class PutTask(Resource):
             print e
             return "json format error"
         
+        msg = dict(self.response_msg)#make a new copy of response_msg
+
         #taskdict.add(task.get('taskid'))
         torrentfileurl = task.get('torrentfileurl')
         topdir = task.get('wwwroot')
@@ -174,19 +199,30 @@ class PutTask(Resource):
             #if file not exits, download the torrent file 
             print 'download %s' % torrentfileurl            
 
+            msg['event'] = 'download_response'
+
             if topdir is None:
                 topdir = self.wwwroot
             
             try:
-                adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request)
+                adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request, msg)
                 adl.start()
                 return NOT_DONE_YET
             except Exception as e:
-                ret = "".join(["download ", torrentfileurl, " failed: ", str(e)])
-                print ret
-                return ret.encode('utf-8')
+                #msg = {}
+                msg['result'] = 'failed'
+                msg['trackback'] = "%s" % str(e)
+
+                self.return_request(request, msg)
+        else:
+            #msg = {}
+            msg['result'] = 'failed'
+            msg['trackback'] = "unknown event: %s" % event
+
+            self.return_request(request, msg)
+            
                 
-        return 'task_received'
+        return 'should not be here'
 
 
 class MakeTorrent(Resource):
@@ -217,10 +253,6 @@ class MakeTorrent(Resource):
         config = self.maketorent_config
         tracker = config['tracker_name']
 
-        #msg = dict(self.response_msg)#make a new copy of response_msg
-        #args = {}
-        #args[filename] = filename + '.torrent'
-
         try:
             make_meta_files(tracker,
                             [filename],
@@ -250,10 +282,10 @@ class MakeTorrent(Resource):
         
     def error_handler(self, error, request, msg = None):
         if msg is None:
-            #msg = ' '.join(['maketorrent failed:', str(error)])
             msg = dict(self.response_msg)#make a new copy of response_msg
-            msg['result'] = 'failed'         
-            msg['trackback'] = "download failed: %s" % str(error)
+        
+        msg['result'] = 'failed'         
+        msg['trackback'] = "%s" % str(error)
 
         self.return_request(request, msg)
                
@@ -304,6 +336,7 @@ class MakeTorrent(Resource):
         args['torrenturl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
 
         msg['args'] =  args
+        msg['event'] = 'maketorrent_response'
         
         if event == 'maketorrent' and fileurl:
             #if file not exits, download the torrent file 
@@ -322,7 +355,7 @@ class MakeTorrent(Resource):
 
                     deferred = downloadPage(bytes(fileurl), localfilename)
                     deferred.addCallback(self.download_done, localfilename, request, msg)
-                    deferred.addErrback(self.error_handler, request)
+                    deferred.addErrback(self.error_handler, request, msg)
 
                 return NOT_DONE_YET
                 #adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request)
@@ -339,7 +372,12 @@ class MakeTorrent(Resource):
 
             self.return_request(request, msg)
 
-        return 'should be here'
+        return 'should not be here'
+
+def return_request(request, msg):
+    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+    request.write(msg)
+    request.finish()
 
 
 class ShutdownTask(Resource):
@@ -347,6 +385,13 @@ class ShutdownTask(Resource):
         self.taskqueue = taskqueue
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
+        self.response_msg = response_msg
+
+    def return_request(self, request, msg):
+        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        request.write(msg)
+        request.finish()
+
 
     def render_GET(self, request):        
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
@@ -373,29 +418,43 @@ class ShutdownTask(Resource):
         if topdir is None:
             topdir = self.wwwroot
 
+        msg = dict(self.response_msg)#make a new copy of response_msg        
+        msg['event'] = 'shutdownall_response'
+
+        #localfilename = join(topdir, urlsplit(fileurl).path[1:])
+        #args = {}
+        #args[localfilename] = localfilename + '.torrent'
+        #args['torrenturl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
+        #msg['args'] =  args
         
         if event == 'shutdown':
             if torrentfileurl:
                 torrentfile = join(topdir, urlsplit(torrentfileurl).path[1:])
                 try:
                     self.multidl.shutdown(torrentfile)
-                    msg = " ".join(["shutdown", torrentfileurl, "OK"])
+                    #msg = " ".join(["shutdown", torrentfileurl, "OK"])
+                    msg['result'] = 'success'
                 except Exception as e:
-                    msg = " ".join(["shutdown", torrentfileurl, "failed: ", str(e)])           
+                    msg['result'] = 'failed'
+                    msg['trackback'] = str(e)                    
             else:
-                msg = "shutdown: not special shutdown file"            
+                msg['result'] = 'failed'
+                msg['trackback'] = "shutdown: not special shutdown file"                   
         elif event == 'shutdownall':
             try:
                 self.multidl.shutdown()
-                msg = "shutdown all downloads: OK"
+                msg['result'] = 'success'
             except Exception as e:
-                msg = " ".join(["shutdown all downloads: failed:", str(e)])
+                msg['result'] = 'failed'
+                msg['trackback'] = str(e)
         else:                
-            msg = "shutdown: unknown command"
+            msg['result'] = 'failed'
+            msg['trackback'] = "unknown command"
 
         print msg    
-        return msg.encode('utf-8')
-
+        #return_request(request, msg)
+        self.return_request(request, msg)
+        return NOT_DONE_YET
 
 
 import Queue
