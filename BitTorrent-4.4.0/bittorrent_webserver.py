@@ -9,6 +9,8 @@ Created on 2013-11-29
 from BitTorrent.makemetafile import make_meta_files
 from BitTorrent.parseargs import parseargs, printHelp
 from BitTorrent import BTFailure
+from sha import *
+from BitTorrent.bencode import *
 
 from twisted.web import server, resource
 from twisted.web.server import Site
@@ -20,6 +22,7 @@ from twisted.internet import reactor
 
 
 import os
+import copy
 import urllib2
 from urlparse import urlsplit
 from os.path import join, dirname, basename, normpath, splitext, getsize
@@ -63,7 +66,7 @@ class AsyncDownloader():
 
     def error_handler(self, error, msg = None):
         if msg is None:
-            msg = dict(self.msg)#make a new copy of response_msg
+            copy.deepcopy(self.msg)#make a new copy of response_msg
         
         msg['result'] = 'failed'         
         msg['trackback'] = "%s" % str(error)        
@@ -183,7 +186,7 @@ class PutTask(Resource):
             print e
             return "json format error"
         
-        msg = dict(self.response_msg)#make a new copy of response_msg
+        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
 
         #taskdict.add(task.get('taskid'))
         torrentfileurl = task.get('torrentfileurl')
@@ -194,12 +197,16 @@ class PutTask(Resource):
         print "seedurl: %s"%task.get('seederurl')        
         print "torrentfileurl: %s"%torrentfileurl
         print "sha1: %s"%task.get('sha1')
+
+        #args = {}
         
         if event == 'download' and torrentfileurl:
             #if file not exits, download the torrent file 
             print 'download %s' % torrentfileurl            
 
-            msg['event'] = 'download_response'
+            msg['event'] = 'download_response'            
+            #args['torrentfileurl'] = torrentfileurl
+            msg['args']['torrentfileurl'] = torrentfileurl
 
             if topdir is None:
                 topdir = self.wwwroot
@@ -254,7 +261,7 @@ class MakeTorrent(Resource):
         tracker = config['tracker_name']
 
         try:
-            make_meta_files(tracker,
+            meta = make_meta_files(tracker,
                             [filename],
                             progressfunc=prog,
                             filefunc=dc,
@@ -265,10 +272,18 @@ class MakeTorrent(Resource):
                             use_tracker=config['use_tracker'],
                             data_dir=config['data_dir'])
 
+
+            metainfo_file = open(filename + '.torrent', 'rb')
+            metainfo = bdecode(metainfo_file.read())
+            metainfo_file.close()
+            info = metainfo['info']
+            info_hash = sha(bencode(info))
+
+            msg['args']['sha1'] = info_hash.hexdigest()
             msg['result'] = 'success'
         except BTFailure, e:
             msg['result'] = 'failed'
-            msg['trackback'] = "make_meta_files failed: %s" % str(e)
+            msg['trackback'] = "%s" % str(e)
         except Exception, e:
             msg['result'] = 'failed'         
             msg['trackback'] = "make_meta_files failed: %s" % str(e)
@@ -282,7 +297,7 @@ class MakeTorrent(Resource):
         
     def error_handler(self, error, request, msg = None):
         if msg is None:
-            msg = dict(self.response_msg)#make a new copy of response_msg
+            msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
         
         msg['result'] = 'failed'         
         msg['trackback'] = "%s" % str(error)
@@ -325,17 +340,18 @@ class MakeTorrent(Resource):
         print "torrentfileurl: %s"%torrentfileurl
         print "sha1: %s"%task.get('sha1')
 
-        msg = dict(self.response_msg)#make a new copy of response_msg
-        
+        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
+        print "response_msg", self.response_msg
+
+
         if topdir is None:
             topdir = self.wwwroot
             
         localfilename = join(topdir, urlsplit(fileurl).path[1:])
-        args = {}
-        args[localfilename] = localfilename + '.torrent'
-        args['torrenturl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
 
-        msg['args'] =  args
+        args = msg['args']
+        args[localfilename] = localfilename + '.torrent'
+        args['torrentfileurl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
         msg['event'] = 'maketorrent_response'
         
         if event == 'maketorrent' and fileurl:
@@ -418,14 +434,8 @@ class ShutdownTask(Resource):
         if topdir is None:
             topdir = self.wwwroot
 
-        msg = dict(self.response_msg)#make a new copy of response_msg        
+        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
         msg['event'] = 'shutdownall_response'
-
-        #localfilename = join(topdir, urlsplit(fileurl).path[1:])
-        #args = {}
-        #args[localfilename] = localfilename + '.torrent'
-        #args['torrenturl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
-        #msg['args'] =  args
         
         if event == 'shutdown':
             if torrentfileurl:

@@ -25,5 +25,6 @@ response_msg={"taskid"  : "",
               "result"  : "",          #success, failed
               "trackback": "",         #failed cause
               "args"    : {            #return value, referrence to event
-                           "sha1":"",},  
+                           #"sha1":""
+                           }
              }
