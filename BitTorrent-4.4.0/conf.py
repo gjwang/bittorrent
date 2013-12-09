@@ -2,6 +2,7 @@ wwwroot = '/home/video' #download file store topdir
 
 http_prefix = "http://127.0.0.1:8100" #only the server that made torrent need
 
+node_domain = 'http://127.0.0.1:8080' #for example, the nginx publish domain
 
 maketorent_config = {'comment': '', 'filesystem_encoding': '', 'target': '', 'language': '', 'use_tracker': True, 'data_dir': '~/.bittorrent/data', 'piece_size_pow2': 18, 'tracker_list': '', 'tracker_name': 'http://223.82.137.218:8090/announce'}
 

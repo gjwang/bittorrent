@@ -29,12 +29,13 @@ from os.path import join, dirname, basename, normpath, splitext, getsize
 
 import json
 import cgi
-from conf import wwwroot, maketorent_config, response_msg, http_prefix
+from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain
 
 
 class AsyncDownloader():
     def __init__(self, topdir, multidl, url, request, msg, filesize = None, localfilename = None):
         self.topdir = topdir
+        self.node_domain = node_domain
         self.multidl = multidl
         self.url = url
         self.request = request
@@ -46,6 +47,15 @@ class AsyncDownloader():
         else:
             self.localfilename = localfilename
 
+        if splitext(self.localfilename)[1].lower() == '.torrent':
+            localtorrentfile = self.localfilename
+            self.msg['args']['filenmae'] = splitext(self.localfilename)[0].lower()
+            self.msg['args']['fileurl'] = self.msg['args']['filenmae'].replace(self.topdir, self.node_domain)
+        else:
+            self.msg['args']['filenmae'] = self.localfilename
+            self.msg['args']['fileurl'] = join(node_domain, urlsplit(self.url).path[1:])
+            
+
     def return_request(self, request, msg):
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         request.write(msg)
@@ -55,13 +65,7 @@ class AsyncDownloader():
         if splitext(self.localfilename)[1].lower() == '.torrent':
             self.add_task_to_multidl(msg)
         else:
-            args = {}
-            args[self.url] = self.localfilename
-            args[''] = self.localfilename
-            
-            msg[args] = args
             msg['result'] = 'success'
-
             return_request(self.request, msg)
 
     def error_handler(self, error, msg = None):
@@ -350,8 +354,10 @@ class MakeTorrent(Resource):
         localfilename = join(topdir, urlsplit(fileurl).path[1:])
 
         args = msg['args']
-        args[localfilename] = localfilename + '.torrent'
+        args['filename'] = localfilename
+        args['torrentfile'] = localfilename + '.torrent'        
         args['torrentfileurl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
+
         msg['event'] = 'maketorrent_response'
         
         if event == 'maketorrent' and fileurl:
@@ -374,9 +380,6 @@ class MakeTorrent(Resource):
                     deferred.addErrback(self.error_handler, request, msg)
 
                 return NOT_DONE_YET
-                #adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request)
-                #adl.start()
-                #return 'unknown error: should be here'
             except Exception as e:
                 msg['result'] = 'failed'
                 msg['trackback'] = str(e)
