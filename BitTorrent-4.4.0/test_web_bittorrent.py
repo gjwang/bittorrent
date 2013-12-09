@@ -25,6 +25,7 @@ def postToServer(posturl, data):
 
 def getToServer(url, data):
     conn = httplib.HTTPConnection("127.0.0.1", '8090')
+    #conn = httplib.HTTPConnection(url)
     conn.request("GET", "/ping")
     r1 = conn.getresponse()
     #print r1.status, r1.reason
@@ -35,6 +36,7 @@ def getToServer(url, data):
 
 def httppostToServer(url, data):
     conn = httplib.HTTPConnection("127.0.0.1", '8090')
+    #conn = httplib.HTTPConnection(url)
     conn.request("POST", "/ping")
     r1 = conn.getresponse()
     #print r1.status, r1.reason
@@ -44,21 +46,42 @@ def httppostToServer(url, data):
 
 
 if __name__ == '__main__':
-    puttaskurl = 'http://127.0.0.1:8090/puttask'
+    peerurl = 'http://127.0.0.1:8090'
+    puttaskurl = peerurl + '/puttask'
 
-    #taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
-    #              "torrentfileurl":"http://www.example.com/a.xml"}'''
-    #postToServer(puttaskurl, taskdata)
+    taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
+                  "torrentfileurl":"http://www.example.com/a.xml"}'''
+    postToServer(puttaskurl, taskdata)
+
+
 
     #shutdown all downloads
-    shutdowntaskurl = 'http://127.0.0.1:8090/shutdowntask'
+    shutdowntaskurl = peerurl + '/shutdowntask'
     taskdata= '''{"taskid":"1341234jljdafl", "event":"shutdownall", "sha1":"fajpqeru", 
                   "torrentfileurl":""}'''
     postToServer(shutdowntaskurl, taskdata)
     time.sleep(1)
 
 
-    maketorrenturl = 'http://127.0.0.1:8090/maketorrent'
+    maketorrenturl = peerurl + '/maketorrent'
+    taskdata= '''{"taskid":"1341234jljdafl", 
+                  "event":"maketorrent", 
+                  "trackers":["http://223.82.137.218:8090/announce", "http://tracker2.com/announce"], 
+                  "starttoseed":"",
+                  "fileurl":"http://www.example.com:8088/example.xml"}'''
+    postToServer(maketorrenturl, taskdata)
+
+
+    maketorrenturl = peerurl + '/maketorrent'
+    taskdata= '''{"taskid":"1341234jljdafl", 
+                  "event":"maketorrent", 
+                  "trackers":["http://223.82.137.218:8090/announce", "http://tracker2.com/announce"], 
+                  "starttoseed":"",
+                  "fileurl":"http://223.82.137.218:8088/example.xml"}'''
+    postToServer(maketorrenturl, taskdata)
+
+
+    maketorrenturl = peerurl + '/maketorrent'
     taskdata= '''{"taskid":"1341234jljdafl", 
                   "event":"maketorrent", 
                   "trackers":["http://223.82.137.218:8090/announce", "http://tracker2.com/announce"], 
@@ -74,22 +97,22 @@ if __name__ == '__main__':
     taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
                   "torrentfileurl":"http://223.82.137.218:8088/01254aa4909c4596b41b547e9fa83378.ts.torrent"}'''
     postToServer(puttaskurl, taskdata)
-    time.sleep(5)
+    time.sleep(1)
 
     #shutdown the special download by torrentfileurl
-    shutdowntaskurl = 'http://127.0.0.1:8090/shutdowntask'
+    shutdowntaskurl = peerurl + '/shutdowntask'
     taskdata= '''{"taskid":"1341234jljdafl", "event":"shutdown", "sha1":"fajpqeru", 
                   "torrentfileurl":"http://223.82.137.218:8088/01254aa4909c4596b41b547e9fa83378.ts.torrent"}'''
     postToServer(shutdowntaskurl, taskdata)
-    #time.sleep(5)
+    time.sleep(1)
 
-    #taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
-    #              "torrentfileurl":"http://223.82.137.218:8088/01254aa4909c4596b41b547e9fa83378.ts.torrent"}'''
-    #postToServer(puttaskurl, taskdata)
-    #time.sleep(5)
+    taskdata= '''{"taskid":"1341234jljdafl", "event":"download", "sha1":"fajpqeru", 
+                  "torrentfileurl":"http://223.82.137.218:8088/01254aa4909c4596b41b547e9fa83378.ts.torrent"}'''
+    postToServer(puttaskurl, taskdata)
+    time.sleep(1)
 
 
-    shutdowntaskurl = 'http://127.0.0.1:8090/shutdowntask'
+    shutdowntaskurl = peerurl + '/shutdowntask'
     taskdata= '''{"taskid":"1341234jljdafl", "event":"shutdown", "sha1":"fajpqeru", 
                   "torrentfileurl":""}'''
     postToServer(shutdowntaskurl, taskdata)
@@ -102,7 +125,9 @@ if __name__ == '__main__':
     #time.sleep(5)
 
 
-    pingurl = 'http://127.0.0.1:8090/ping'
+    pingurl = peerurl + '/ping'
     postToServer(pingurl, postdata)
-    getToServer(pingurl, postdata)
-    httppostToServer(pingurl, postdata)
+    #time.sleep(1)
+    #getToServer(pingurl, postdata)
+    #time.sleep(1)
+    #httppostToServer(pingurl, postdata)
