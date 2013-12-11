@@ -81,13 +81,13 @@ class AsyncDownloader():
             if self.multidl.dls.has_key(self.localfilename):
                 #TODO: torrentfile is downloading or not
                 print '%s is downloading' % self.localfilename                        
-                msg['state'] = 'downloading'
+                msg['status'] = 'downloading'
                 msg['result'] = 'success'
             else:
                 try:
                     dl = self.multidl.add_dl(self.localfilename)
                     dl.start() 
-                    msg['state'] = 'beginning'
+                    msg['status'] = 'beginning'
                     msg['result'] = 'success'
                 except Exception as e:
                     msg['result'] = 'failed'

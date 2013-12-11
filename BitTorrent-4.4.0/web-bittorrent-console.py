@@ -20,6 +20,7 @@ install_translation()
 import sys
 import os
 import threading
+import copy
 from time import time, strftime
 from cStringIO import StringIO
 
@@ -35,15 +36,24 @@ from BitTorrent import BTFailure
 from BitTorrent import version
 from BitTorrent import GetTorrent
 
+from zope.interface import implements
+
+from twisted.internet.protocol import Protocol
+from twisted.internet.defer import succeed, Deferred
+from twisted.web.iweb import IBodyProducer
 from twisted.web import server, resource
 from twisted.web.server import Site
 from twisted.web.resource import Resource
 from twisted.internet import reactor
+from twisted.web.client import Agent
+from twisted.web.http_headers import Headers
+#from twisted.web.client import FileBodyProducer
 
 import json
 import cgi
 
 from bittorrent_webserver import HelloResource, FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
+from conf import report_peer_status_url, response_msg
 
 
 def fmttime(n):
@@ -131,6 +141,8 @@ class HeadlessDisplayer(object):
             self.percentDone = str(int(fractionDone * 1000) / 10)
         if downRate is not None:
             self.downRate = '%.1f KB/s' % (downRate / (1 << 10))
+            #print "type(%s), downRate%s"%(type(downRate), downRate)
+            
         if upRate is not None:
             self.upRate = '%.1f KB/s' % (upRate / (1 << 10))
         downTotal = statistics.get('downTotal')
@@ -214,15 +226,143 @@ class HeadlessDisplayer(object):
         print s.getvalue()
 
 
+class StringProducer(object):
+    implements(IBodyProducer)
+
+    def __init__(self, body):
+        self.body = body
+        self.length = len(body)
+
+    def startProducing(self, consumer):
+        consumer.write(self.body)
+        return succeed(None)
+
+    def pauseProducing(self):
+        pass
+
+    def stopProducing(self):
+        pass
+
+class BeginningPrinter(Protocol):
+    def __init__(self, finished):
+        self.finished = finished
+        self.remaining = 1024 * 10
+
+    def dataReceived(self, bytes):
+        if self.remaining:
+            display = bytes[:self.remaining]
+            print 'Some data received:'
+            print display
+            self.remaining -= len(display)
+
+    def connectionLost(self, reason):
+        print 'Finished receiving body:', reason.getErrorMessage()
+        self.finished.callback(None)
+
+class StatusReporter(object):
+    def __init__(self, report_url):
+        self.report_url = report_url
+        self.agent = Agent(reactor)
+        self.status_msg = copy.deepcopy(response_msg)
+        self.status_msg["status"] = ""
+        self.status_msg["args"]["percent"] = 0
+        self.status_msg["args"]["timeleft"] = 0
+        self.status_msg["args"]["downrate"] = 0
+        self.status_msg["args"]["uprate"] = 0                
+        self.status_msg["args"]["downtotal"] = 0
+        self.status_msg["args"]["uptotal"] = 0               
+        self.status_msg["args"]["numpeers"] = 0
+        self.status_msg["args"]["numseeds"] = 0
+
+
+    def send_status(self, statistics, torrentfile=None):
+        fractionDone = statistics.get('fractionDone')
+        activity = statistics.get('activity')
+        timeEst = statistics.get('timeEst')
+        downRate = statistics.get('downRate')
+        upRate = statistics.get('upRate')
+        downTotal = statistics.get('downTotal')
+        #spew = statistics.get('spew')
+
+        if True:
+            status_msg = copy.deepcopy(self.status_msg)
+            status_msg["event"]  = "status_response"
+
+            activity = statistics.get('activity')
+            if activity is not None:
+                status_msg["status"] = activity
+                
+            #status_msg["result"] = "success",          #success, failed
+            #"trackback": "",         #failed cause
+            status_msg["args"]["sha1"] = "asdfadsf1432r"
+
+            if fractionDone is not None:
+                status_msg["args"]["percent"] = str(int(fractionDone * 1000) / 10)
+
+            if timeEst is not None:
+                status_msg["args"]["timeleft"] = int(timeEst)    #seconds
+
+            if downRate is not None:
+                status_msg["args"]["downrate"] = int(downRate)
+
+            if upRate is not None:
+                status_msg["args"]["uprate"] = int(upRate)
+
+            if torrentfile is not None:
+                status_msg["args"]["torrentfile"] = torrentfile
+
+            if downTotal is not None:
+                upTotal = statistics['upTotal']
+                status_msg["args"]["downtotal"] = int(downTotal)
+                status_msg["args"]["uptotal"] = int(upTotal)
+                status_msg["args"]["numpeers"] = statistics['numPeers']
+                status_msg["args"]["numseeds"] = statistics['numSeeds' ]
+                #status_msg["args"]["seedstatus"] = self.seedStatus
+            
+            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
+
+    def send(self, status):
+        #body = FileBodyProducer(StringIO("hello, world"))
+        body = StringProducer(status)
+        d = self.agent.request(
+            'POST',
+            self.report_url,
+            Headers({'User-Agent': ['Twisted Web Client'],
+                     'Content-Type': ['application/json']}),
+            body)
+
+        def cbResponse(ignored):
+            print ignored
+            print 'Response received'
+        #d.addCallback(cbResponse)
+
+        def cbRequest(response):
+            print 'Response version:', response.version
+            print 'Response code:', response.code
+            print 'Response phrase:', response.phrase
+            print 'Response headers:'
+            from pprint import pformat
+            print pformat(list(response.headers.getAllRawHeaders()))
+            finished = Deferred()
+            response.deliverBody(BeginningPrinter(finished))
+            return finished
+
+        d.addCallback(cbRequest)
+
+
 class DL(Feedback):
 
-    def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, doneflag = None):
+    def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, status_reporter=None, doneflag=None):
         self.doneflag = doneflag
         self.metainfo = metainfo
         self.config = Preferences( Preferences().initWithDict(config) ).initWithDict(singledl_config)
         
         self.multitorrent = multitorrent
         self.shutdownflag = False
+        self.status_reporter = status_reporter
+        self.torrentfile = None
+        self.torrent_name = None
+
 
     def run(self):
         self.d = HeadlessDisplayer(self.doneflag)
@@ -236,6 +376,10 @@ class DL(Feedback):
             # raises BTFailure if bad
             metainfo = ConvertedMetainfo(bdecode(self.metainfo))
             torrent_name = metainfo.name_fs
+            if self.torrentfile is None:
+                self.torrentfile = '.'.join([torrent_name, 'torrent'])
+            #self.torrent_name = torrent_name
+
             if config['save_as']:
                 if config['save_in']:
                     raise BTFailure(_("You cannot specify both --save_as and "
@@ -286,13 +430,28 @@ class DL(Feedback):
 
     def get_status(self):
         if self.shutdownflag:
+            #status = 'shutdown'
+            #self.status_reporter.send_status(status)
             return
+
+        #TODO:
+        #if self.done:
+        #    get status, display, send_status
+        #     return
 
         self.multitorrent.rawserver.add_task(self.get_status,
                                              self.config['display_interval'])
         status = self.torrent.get_status(self.config['spew'])
-        self.d.display(status)
 
+        #print "status %s" % status
+        #status = {'storage_numcomplete': 1337, 'discarded': 0, 'upRate': 0.0, 'activity': 'seeding', 'trackerSeeds': None, 'fractionDone': 1, 'storage_dirty': 0, 'downTotal': 0, 'downRate': 0, 'numSeeds': 0, 'upTotal': 0, 'storage_numflunked': 0, 'numCopies': 0, 'ever_got_incoming': False, 'storage_new': 0, 'numCopyList': [0.0], 'upRate2': 0.0, 'numPeers': 0, 'storage_active': 0, 'trackerPeers': None}
+
+
+        self.d.display(status)
+        if self.status_reporter:
+            self.status_reporter.send_status(status, self.torrentfile)
+        
+        
     def global_error(self, level, text):
         self.d.error(text)
 
@@ -312,7 +471,9 @@ class MultiDL():
         self.config = Preferences().initWithDict(config)
         self.multitorrent = Multitorrent(self.config, self.doneflag,
                                          self.global_error)
-        self.dls = {} #downloads dict
+        self.dls = {} #downloaders dict
+
+        self.status_reporter = StatusReporter(report_peer_status_url)
 
     def add_dl(self, torrentfile, singledl_config = {}):
         if torrentfile is not None:
@@ -322,7 +483,7 @@ class MultiDL():
         else:
             raise BTFailure(_("you must specify a .torrent file"))
 
-        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
+        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.status_reporter, self.doneflag)
         self.dls[torrentfile] = dl
         return dl
 
@@ -337,9 +498,13 @@ class MultiDL():
         #TODO: get the hash_info to avoid the same file with two torrent file
         print "MultiDl.shutdown"
         try:
-            if torrentfile and self.dls.has_key(torrentfile):
-                self.dls[torrentfile].shutdown()
-                del self.dls[torrentfile]
+            #delete the downloader to avoid mem leak?
+            if torrentfile:
+                if self.dls.has_key(torrentfile):
+                    self.dls[torrentfile].shutdown()
+                    del self.dls[torrentfile]
+                else:
+                    print "%s is not downloading"%torrentfile
             else:
                 #shutdown the all downloads
                 for dl in self.dls.values():
@@ -348,6 +513,7 @@ class MultiDL():
                 self.dls.clear()
         except Exception as e:
             print "shutdown %s exception: %s" % (torrentfile, e)
+            raise e
 
     def global_error(self, level, text):
         #self.d.error(text)
