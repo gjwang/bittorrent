@@ -333,15 +333,13 @@ class MakeTorrent(Resource):
             return "maketorent: json format error"
 
         
-        #taskdict.add(task.get('taskid'))
+        event = task.get('event')
         args = task.get('args') or {}
+
         torrentfileurl = args.get('torrentfileurl')
         fileurl = args.get('fileurl')
         topdir = args.get('wwwroot')
-        event = args.get('event')
-
-        trackers = task.get('trackers')
-        print "type(trackers) %s" % type(trackers)
+        trackers = args.get('trackers') or []
 
         for tracker in trackers:
             #print tracker['tracker']
