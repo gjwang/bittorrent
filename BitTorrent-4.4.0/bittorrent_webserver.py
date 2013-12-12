@@ -334,10 +334,11 @@ class MakeTorrent(Resource):
 
         
         #taskdict.add(task.get('taskid'))
-        torrentfileurl = task.get('torrentfileurl')
-        fileurl = task.get('fileurl')
-        topdir = task.get('wwwroot')
-        event = task.get('event')
+        args = task.get('args') or {}
+        torrentfileurl = args.get('torrentfileurl')
+        fileurl = args.get('fileurl')
+        topdir = args.get('wwwroot')
+        event = args.get('event')
 
         trackers = task.get('trackers')
         print "type(trackers) %s" % type(trackers)
@@ -348,9 +349,6 @@ class MakeTorrent(Resource):
        
         print "taskid: %s"%task.get('taskid')
         print "event: %s"%event
-        print "seedurl: %s"%task.get('seederurl')        
-        print "torrentfileurl: %s"%torrentfileurl
-        print "sha1: %s"%task.get('sha1')
 
         msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
         print "response_msg", self.response_msg
@@ -371,6 +369,7 @@ class MakeTorrent(Resource):
         if event == 'maketorrent' and fileurl:
             #if file not exits, download the torrent file 
             print 'download %s' % fileurl
+
 
             try:
                 if os.path.exists(localfilename):
