@@ -6,8 +6,65 @@ node_domain = 'http://127.0.0.1:8080' #for example, the nginx publish domain
 
 report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
 
-
 maketorent_config = {'comment': '', 'filesystem_encoding': '', 'target': '', 'language': '', 'use_tracker': True, 'data_dir': '~/.bittorrent/data', 'piece_size_pow2': 18, 'tracker_list': '', 'tracker_name': 'http://223.82.137.218:8090/announce'}
+
+
+downloader_config = {'one_connection_per_ip': True, 
+                     'max_slice_length': 16384, 
+
+                     'save_in': '', 
+                     'save_as': '', 
+                     'data_dir': '~/.bittorrent/data', 
+
+                     'minport': 6881, 
+                     'maxport': 6999, 
+
+                     'max_uploads': -1, 
+                     'min_uploads': 2, 
+                     'max_upload_rate': 0, 
+
+                     'twisted': -1, 
+
+                     'url': '', 
+
+                     'display_interval': 3, 
+                     'max_announce_retry_interval': 60, 
+
+                     'start_trackerless_client': False, 
+
+                     'rarest_first_cutoff': 4, 
+                     'bad_libc_workaround': False, 
+                     'ip': '', 
+                     'download_slice_size': 16384, 
+                     'max_files_open': 50, 
+                     'close_with_rst': 0,                      
+                     'filesystem_encoding': '', 
+                     'rerequest_interval': 300, 
+                     'upnp': True, 
+                     'peer_socket_tos': 8, 
+                     'spew': False, 
+                     'socket_timeout': 300.0, 
+                     'forwarded_port': 0, 
+                     'timeout_check_interval': 60.0, 
+                     'max_initiate': 60, 
+                     'max_rate_period_seedtime': 100.0, 
+                     'max_message_length': 8388608, 
+                     'tracker_proxy': '', 
+                     'check_hashes': True, 
+                     'min_peers': 20, 
+                     'ask_for_save': 0, 
+                     'snub_time': 30.0, 
+                     'retaliate_to_garbled_data': True, 
+                     'keepalive_interval': 120.0,                      
+                     'language': '', 
+                     'bind': '', 
+                     'max_rate_period': 20.0, 
+                     'max_incomplete': 100, 
+                     'responsefile': '', 
+                     'upload_unit_size': 1380, 
+                     'max_allow_in': 80,
+                    }
+
 
 
 #template, should translate into json before response

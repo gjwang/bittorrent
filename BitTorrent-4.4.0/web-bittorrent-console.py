@@ -53,7 +53,7 @@ import json
 import cgi
 
 from bittorrent_webserver import HelloResource, FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
-from conf import report_peer_status_url, response_msg
+from conf import report_peer_status_url, response_msg, downloader_config
 
 
 def fmttime(n):
@@ -355,8 +355,14 @@ class DL(Feedback):
     def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, status_reporter=None, doneflag=None):
         self.doneflag = doneflag
         self.metainfo = metainfo
-        self.config = Preferences( Preferences().initWithDict(config) ).initWithDict(singledl_config)
-        
+
+        try:
+            for k, v in singledl_config.items():
+                config[k] = v
+        except Exception as e:
+            print e
+
+        self.config = config        
         self.multitorrent = multitorrent
         self.shutdownflag = False
         self.status_reporter = status_reporter
@@ -522,33 +528,28 @@ class MultiDL():
 import Queue
 taskqueue = Queue.Queue(3)
 if __name__ == '__main__':
-    uiname = 'bittorrent-console'
-    defaults = get_defaults(uiname)
+    #uiname = 'bittorrent-console'
+    #defaults = get_defaults(uiname)
 
-    metainfo = None
-    if len(sys.argv) <= 1:
-        printHelp(uiname, defaults)
-        sys.exit(1)
-    try:
+    #metainfo = None
+    #if len(sys.argv) <= 1:
+    #    printHelp(uiname, defaults)
+    #    sys.exit(1)
+    #try:
         #config, args = configfile.parse_configuration_and_args(defaults,
         #                               uiname, sys.argv[1:2], 0, 1)
+    #except BTFailure, e:
+    #    print str(e)
+    #    sys.exit(1)
 
-
-        config = {'one_connection_per_ip': True, 'max_slice_length': 16384, 'save_in': '', 'rarest_first_cutoff': 4, 'bad_libc_workaround': False, 'ip': '', 'download_slice_size': 16384, 'max_files_open': 50, 'close_with_rst': 0, 'start_trackerless_client': True, 'filesystem_encoding': '', 'rerequest_interval': 300, 'upnp': True, 'max_uploads': -1, 'peer_socket_tos': 8, 'save_as': '', 'data_dir': '/home/gjwang/.bittorrent/data', 'min_uploads': 2, 'spew': False, 'twisted': -1, 'max_upload_rate': 0, 'socket_timeout': 300.0, 'forwarded_port': 0, 'minport': 6881, 'timeout_check_interval': 60.0, 'display_interval': 5, 'max_initiate': 60, 'max_rate_period_seedtime': 100.0, 'max_message_length': 8388608, 'tracker_proxy': '', 'max_announce_retry_interval': 60, 'check_hashes': True, 'min_peers': 20, 'ask_for_save': 0, 'snub_time': 30.0, 'retaliate_to_garbled_data': True, 'keepalive_interval': 120.0, 'maxport': 6999, 'language': '', 'url': '', 'bind': '', 'max_rate_period': 20.0, 'max_incomplete': 100, 'responsefile': '', 'upload_unit_size': 1380, 'max_allow_in': 80}
-
-        #print config
-
-    except BTFailure, e:
-        print str(e)
-        sys.exit(1)
-
+    config = downloader_config
     multidl = MultiDL(config)
 
-    for torrentfile in sys.argv[1:]:
-        print torrentfile
-        singledl_config = {'save_as':'', 'save_in':''}
-        dl = multidl.add_dl(torrentfile, singledl_config)
-        dl.start()
+    #for torrentfile in sys.argv[1:]:
+    #    print torrentfile
+    #    singledl_config = {'save_as':'', 'save_in':''}
+        #dl = multidl.add_dl(torrentfile, singledl_config)
+        #dl.start()
 
 
     root = Resource()
@@ -568,6 +569,7 @@ if __name__ == '__main__':
     #reactor.run()
 
 
+    print "multidl.listen_forever()"
     multidl.listen_forever()
     multidl.shutdown()
 

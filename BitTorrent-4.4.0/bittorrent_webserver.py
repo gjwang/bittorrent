@@ -41,20 +41,23 @@ class AsyncDownloader():
         self.request = request
         self.msg = msg
         self.filesize = filesize
+        self.localtorrentfile = None
 
         if localfilename is None:
-            self.localfilename = join(self.topdir, urlsplit(self.url).path[1:])
-        else:
+            f = join(self.topdir, urlsplit(self.url).path[1:])
+            if splitext(f)[1].lower() == '.torrent':
+                self.localtorrentfile = f
+                self.localfilename = splitext(f)[0]
+            else:
+                self.localfilename = f
+        else:            
             self.localfilename = localfilename
-
-        if splitext(self.localfilename)[1].lower() == '.torrent':
-            localtorrentfile = self.localfilename
-            self.msg['args']['filenmae'] = splitext(self.localfilename)[0].lower()
-            self.msg['args']['fileurl'] = self.msg['args']['filenmae'].replace(self.topdir, self.node_domain)
-        else:
-            self.msg['args']['filenmae'] = self.localfilename
-            self.msg['args']['fileurl'] = join(node_domain, urlsplit(self.url).path[1:])
+            if splitext(self.url)[1].lower() == '.torrent':
+                self.localtorrentfile = splitext(self.url)[0]
             
+        self.msg['args']['filenmae'] = self.localfilename
+        self.msg['args']['fileurl'] = self.localfilename.replace(self.topdir, self.node_domain)
+        self.msg['args']['torrentfile'] =  self.localtorrentfile
 
     def return_request(self, request, msg):
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
@@ -62,7 +65,7 @@ class AsyncDownloader():
         request.finish()
 
     def download_done(self, context, msg):
-        if splitext(self.localfilename)[1].lower() == '.torrent':
+        if self.localtorrentfile:
             self.add_task_to_multidl(msg)
         else:
             msg['result'] = 'success'
@@ -78,14 +81,18 @@ class AsyncDownloader():
 
     def add_task_to_multidl(self, msg):
         try:
-            if self.multidl.dls.has_key(self.localfilename):
+            if self.multidl.dls.has_key(self.localtorrentfile):
                 #TODO: torrentfile is downloading or not
-                print '%s is downloading' % self.localfilename                        
+                print '%s is downloading' % self.localtorrentfile
                 msg['status'] = 'downloading'
                 msg['result'] = 'success'
             else:
                 try:
-                    dl = self.multidl.add_dl(self.localfilename)
+                    print "btdown %s to %s" %((self.localtorrentfile, self.localfilename))
+
+                    dl_config = {}
+                    dl_config['save_as'] = self.localfilename
+                    dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
                     dl.start() 
                     msg['status'] = 'beginning'
                     msg['result'] = 'success'
@@ -120,7 +127,9 @@ class AsyncDownloader():
         if self.makedir() == False:
             return 
 
-        deferred = downloadPage(bytes(self.url), self.localfilename)
+        print "download %s to %s" %((self.url, self.localtorrentfile))
+
+        deferred = downloadPage(bytes(self.url), self.localtorrentfile)
         deferred.addCallback(self.download_done, self.msg)
         deferred.addErrback(self.error_handler, self.msg)
 
@@ -206,7 +215,6 @@ class PutTask(Resource):
         
         if event == 'download' and torrentfileurl:
             #if file not exits, download the torrent file 
-            print 'download %s' % torrentfileurl            
 
             msg['event'] = 'download_response'            
             #args['torrentfileurl'] = torrentfileurl
@@ -296,7 +304,7 @@ class MakeTorrent(Resource):
         self.return_request(request, msg)
 
     def download_done(self, context, filename, request, msg):
-        print "download: %s done"%filename
+        print "down: %s done"%filename
         self.maketorrent(filename, request, msg)
         
     def error_handler(self, error, request, msg = None):
@@ -375,6 +383,7 @@ class MakeTorrent(Resource):
                     if not os.path.exists(dirname(localfilename)):
                         os.makedirs(dstdirname)
 
+                    print "download %s to %s"%(fileurl, localfilename)
                     deferred = downloadPage(bytes(fileurl), localfilename)
                     deferred.addCallback(self.download_done, localfilename, request, msg)
                     deferred.addErrback(self.error_handler, request, msg)
