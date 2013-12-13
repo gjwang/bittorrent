@@ -81,26 +81,42 @@ class AsyncDownloader():
 
     def add_task_to_multidl(self, msg):
         try:
-            if self.multidl.dls.has_key(self.localtorrentfile):
+            sha1 = msg['args']['sha1']            
+            if sha1 and self.multidl.dls.has_key(sha1):
                 #TODO: torrentfile is downloading or not
-                print '%s is downloading' % self.localtorrentfile
-                msg['status'] = 'downloading'
-                msg['result'] = 'success'
-            else:
-                try:
-                    print "btdown %s to %s" %((self.localtorrentfile, self.localfilename))
+                dl, _= self.multidl.dls[sha1]
 
-                    dl_config = {}
-                    dl_config['save_as'] = self.localfilename
-                    dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
-                    dl.start() 
-                    msg['status'] = 'beginning'
+                msg['status'] = dl.get_activity()
+                msg['result'] = 'success'
+                self.return_request(self.request, msg)
+                return
+            
+            for (hash_info, (dl, f)) in self.multidl.dls.items():
+                if f == self.localtorrentfile:
+                    print 'file: %s is already downloading' % self.localtorrentfile
+
+                    msg['status'] = dl.get_activity()
                     msg['result'] = 'success'
-                except Exception as e:
-                    msg['result'] = 'failed'
-                    msg['trackback'] = str(e)
+                    self.return_request(self.request, msg)
+                    return                    
+
+            try:
+                print "btdown %s to %s" %((self.localtorrentfile, self.localfilename))
+
+                dl_config = {}
+                dl_config['save_as'] = self.localfilename
+                #add_dl would start to download
+                dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
+
+                msg['status'] = dl.get_activity()
+                msg['result'] = 'success'
+            except Exception as e:
+                print str(e)
+                msg['result'] = 'failed'
+                msg['trackback'] = "multidl.add_dl Execption: %s" % str(e)
 
         except Exception as e:
+            print str(e)
             msg['result'] = 'failed'
             msg['trackback'] = str(e)
 
@@ -133,26 +149,6 @@ class AsyncDownloader():
         deferred.addCallback(self.download_done, self.msg)
         deferred.addErrback(self.error_handler, self.msg)
 
-
-
-class HelloResource(resource.Resource):
-    isLeaf = True
-    numberRequests = 0
-    
-    def render_GET(self, request):
-        self.numberRequests += 1
-        request.setHeader("content-type", "text/plain")
-        print request
-        print request.uri
-        return "I am request #" + str(self.numberRequests) + "\n"
-    
-    def render_POST(self, request):
-        self.numberRequests += 1
-        request.setHeader("content-type", "text/plain")
-        print request
-        print request.args
-        return "I am request #" + str(self.numberRequests) + "\n"
-    
 
 class Ping(Resource):
     def render_GET(self, request):        
@@ -199,29 +195,24 @@ class PutTask(Resource):
             print e
             return "json format error"
         
-        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
-
-        #taskdict.add(task.get('taskid'))
-        torrentfileurl = task.get('torrentfileurl')
-        topdir = task.get('wwwroot')
         event = task.get('event')
-        print "taskid: %s"%task.get('taskid')
-        print "event: %s"%event
-        print "seedurl: %s"%task.get('seederurl')        
-        print "torrentfileurl: %s"%torrentfileurl
-        print "sha1: %s"%task.get('sha1')
 
-        #args = {}
+        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
+        msg['taskid'] = task.get('taskid') or ''
         
-        if event == 'download' and torrentfileurl:
-            #if file not exits, download the torrent file 
+        if event == 'download':
+            taskargs = task.get('args') or {}
+            torrentfileurl = taskargs.get('torrentfileurl')
+
+            if torrentfileurl is None:
+                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                return msg
 
             msg['event'] = 'download_response'            
-            #args['torrentfileurl'] = torrentfileurl
             msg['args']['torrentfileurl'] = torrentfileurl
+            msg['args']['sha1'] = taskargs.get('sha1')
 
-            if topdir is None:
-                topdir = self.wwwroot
+            topdir = task.get('wwwroot') or self.wwwroot
             
             try:
                 adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request, msg)
@@ -230,18 +221,14 @@ class PutTask(Resource):
             except Exception as e:
                 #msg = {}
                 msg['result'] = 'failed'
-                msg['trackback'] = "%s" % str(e)
-
-                self.return_request(request, msg)
+                msg['trackback'] = "AsyncDownloader Exception: %s" % str(e)
         else:
             #msg = {}
             msg['result'] = 'failed'
             msg['trackback'] = "unknown event: %s" % event
-
-            self.return_request(request, msg)
-            
-                
-        return 'should not be here'
+                            
+        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        return msg
 
 
 class MakeTorrent(Resource):
@@ -324,52 +311,47 @@ class MakeTorrent(Resource):
     def render_POST(self, request):
         self.tasknum += 1
         content = cgi.escape(request.content.read())
-        print content
         task = {}
+
+        print 'content=',content
         try:
             task = json.loads(content)
         except Exception as e:
             print e
-            return "maketorent: json format error"
+            msg = {}
+            msg['event'] = 'maketorrent_response'
+            msg['result'] = 'failed'
+            msg['trackback'] = "maketorent: json format error"
+            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+            return msg
 
-        
         event = task.get('event')
-        args = task.get('args') or {}
-
-        torrentfileurl = args.get('torrentfileurl')
-        fileurl = args.get('fileurl')
-        topdir = args.get('wwwroot')
-        trackers = args.get('trackers') or []
-
-        for tracker in trackers:
-            #print tracker['tracker']
-            print tracker
-       
-        print "taskid: %s"%task.get('taskid')
-        print "event: %s"%event
 
         msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
-        print "response_msg", self.response_msg
-
-
-        if topdir is None:
-            topdir = self.wwwroot
-            
-        localfilename = join(topdir, urlsplit(fileurl).path[1:])
-
-        args = msg['args']
-        args['filename'] = localfilename
-        args['torrentfile'] = localfilename + '.torrent'        
-        args['torrentfileurl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
-
+        msg['taskid'] = task.get('taskid') or ''
         msg['event'] = 'maketorrent_response'
         
-        if event == 'maketorrent' and fileurl:
-            #if file not exits, download the torrent file 
-            print 'download %s' % fileurl
-
-
+        if event == 'maketorrent':
             try:
+                args = task.get('args') or {}
+                print args
+                fileurl = args.get('fileurl')
+                print fileurl
+                if fileurl is None:
+                    msg['result'] = 'failed'
+                    msg['trackback'] = "undefine fileurl in args"                    
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+                    return msg
+
+                topdir = args.get('wwwroot') or self.wwwroot
+                trackers = args.get('trackers') or []
+
+                localfilename = join(topdir, urlsplit(fileurl).path[1:])
+                args_rsp = msg['args']
+                args_rsp['filename'] = localfilename
+                args_rsp['torrentfile'] = localfilename + '.torrent'        
+                args_rsp['torrentfileurl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
+
                 if os.path.exists(localfilename):
                     #and getsize(localfilename) == filesize:
                     #hash_info == task.get('hasn_info')
@@ -387,15 +369,18 @@ class MakeTorrent(Resource):
 
                 return NOT_DONE_YET
             except Exception as e:
+                print str(e)
                 msg['result'] = 'failed'
                 msg['trackback'] = str(e)
-                self.return_request(request, msg)
+                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                return msg
+
         else:  
             #msg = {}
             msg['result'] = 'failed'
             msg['trackback'] = "unknown event: %s" % event
-
-            self.return_request(request, msg)
+            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+            return msg
 
         return 'should not be here'
 
@@ -417,7 +402,6 @@ class ShutdownTask(Resource):
         request.write(msg)
         request.finish()
 
-
     def render_GET(self, request):        
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
     
@@ -431,35 +415,38 @@ class ShutdownTask(Resource):
             print e
             return "json format error"
         
-        torrentfileurl = task.get('torrentfileurl')
-        topdir = task.get('wwwroot')
         event = task.get('event')
-        print "taskid: %s"%task.get('taskid')
-        print "event: %s"%event
-        print "seedurl: %s"%task.get('seederurl')        
-        print "torrentfileurl: %s"%torrentfileurl
-        print "sha1: %s"%task.get('sha1')
-
-        if topdir is None:
-            topdir = self.wwwroot
+        taskid = task.get('taskid') or ""
 
         msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
-        msg['event'] = 'shutdownall_response'
-        
+
+        msg['taskid'] = taskid
+
         if event == 'shutdown':
-            if torrentfileurl:
-                torrentfile = join(topdir, urlsplit(torrentfileurl).path[1:])
+            msg['event'] = 'shutdown_response'
+
+            taskargs = task.get('args') or {}
+            torrentfileurl = taskargs.get('torrentfileurl')
+            sha1 = taskargs.get('sha1')
+            topdir = taskargs.get('wwwroot') or self.wwwroot
+
+            if sha1 or torrentfileurl:
+                if torrentfileurl:
+                    torrentfile = join(topdir, urlsplit(torrentfileurl).path[1:])
+                else:
+                    torrentfile = None
+
                 try:
-                    self.multidl.shutdown(torrentfile)
-                    #msg = " ".join(["shutdown", torrentfileurl, "OK"])
+                    self.multidl.shutdown(sha1=sha1, torrentfile=torrentfile)
                     msg['result'] = 'success'
                 except Exception as e:
                     msg['result'] = 'failed'
-                    msg['trackback'] = str(e)                    
+                    msg['trackback'] = str(e)                                    
             else:
                 msg['result'] = 'failed'
-                msg['trackback'] = "shutdown: not special shutdown file"                   
+                msg['trackback'] = "shutdown: not special sha1 or file"
         elif event == 'shutdownall':
+            msg['event'] = 'shutdownall_response'
             try:
                 self.multidl.shutdown()
                 msg['result'] = 'success'
@@ -470,10 +457,8 @@ class ShutdownTask(Resource):
             msg['result'] = 'failed'
             msg['trackback'] = "unknown command"
 
-        print msg    
-        #return_request(request, msg)
-        self.return_request(request, msg)
-        return NOT_DONE_YET
+        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        return msg
 
 
 import Queue
@@ -481,14 +466,11 @@ taskqueue = Queue.Queue(3)
 taskdict = {}
 if __name__ == "__main__":
     
-
     root = Resource()
-    root.putChild("hello", HelloResource())
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
     root.putChild("puttask", PutTask(taskqueue))
     root.putChild("shutdowntask", ShuddownTask(taskqueue))
-
     
     factory = Site(root)
     reactor.listenTCP(8090, factory)

@@ -23,6 +23,7 @@ import threading
 import copy
 from time import time, strftime
 from cStringIO import StringIO
+import binascii
 
 from BitTorrent.download import Feedback, Multitorrent
 from BitTorrent.defaultargs import get_defaults
@@ -52,7 +53,7 @@ from twisted.web.http_headers import Headers
 import json
 import cgi
 
-from bittorrent_webserver import HelloResource, FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
+from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
 from conf import report_peer_status_url, response_msg, downloader_config
 
 
@@ -275,7 +276,7 @@ class StatusReporter(object):
         self.status_msg["args"]["numseeds"] = 0
 
 
-    def send_status(self, statistics, torrentfile=None):
+    def send_status(self, statistics, torrentfile=None, sha1=None):
         fractionDone = statistics.get('fractionDone')
         activity = statistics.get('activity')
         timeEst = statistics.get('timeEst')
@@ -294,7 +295,7 @@ class StatusReporter(object):
                 
             #status_msg["result"] = "success",          #success, failed
             #"trackback": "",         #failed cause
-            status_msg["args"]["sha1"] = "asdfadsf1432r"
+            status_msg["args"]["sha1"] = sha1 or ''
 
             if fractionDone is not None:
                 status_msg["args"]["percent"] = str(int(fractionDone * 1000) / 10)
@@ -368,7 +369,8 @@ class DL(Feedback):
         self.status_reporter = status_reporter
         self.torrentfile = None
         self.torrent_name = None
-
+        self.hash_info = None
+        self.activity = None
 
     def run(self):
         self.d = HeadlessDisplayer(self.doneflag)
@@ -381,6 +383,8 @@ class DL(Feedback):
 
             # raises BTFailure if bad
             metainfo = ConvertedMetainfo(bdecode(self.metainfo))
+            self.hash_info = binascii.b2a_hex(metainfo.infohash)
+
             torrent_name = metainfo.name_fs
             if self.torrentfile is None:
                 self.torrentfile = '.'.join([torrent_name, 'torrent'])
@@ -448,16 +452,17 @@ class DL(Feedback):
         self.multitorrent.rawserver.add_task(self.get_status,
                                              self.config['display_interval'])
         status = self.torrent.get_status(self.config['spew'])
-
-        #print "status %s" % status
-        #status = {'storage_numcomplete': 1337, 'discarded': 0, 'upRate': 0.0, 'activity': 'seeding', 'trackerSeeds': None, 'fractionDone': 1, 'storage_dirty': 0, 'downTotal': 0, 'downRate': 0, 'numSeeds': 0, 'upTotal': 0, 'storage_numflunked': 0, 'numCopies': 0, 'ever_got_incoming': False, 'storage_new': 0, 'numCopyList': [0.0], 'upRate2': 0.0, 'numPeers': 0, 'storage_active': 0, 'trackerPeers': None}
-
+        self.activity = status.get('activity')
 
         self.d.display(status)
+
         if self.status_reporter:
-            self.status_reporter.send_status(status, self.torrentfile)
-        
-        
+            self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
+
+
+    def get_activity(self):
+        return self.activity
+
     def global_error(self, level, text):
         self.d.error(text)
 
@@ -477,8 +482,7 @@ class MultiDL():
         self.config = Preferences().initWithDict(config)
         self.multitorrent = Multitorrent(self.config, self.doneflag,
                                          self.global_error)
-        self.dls = {} #downloaders dict
-
+        self.dls = {}       #downloaders dict
         self.status_reporter = StatusReporter(report_peer_status_url)
 
     def add_dl(self, torrentfile, singledl_config = {}):
@@ -490,7 +494,8 @@ class MultiDL():
             raise BTFailure(_("you must specify a .torrent file"))
 
         dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.status_reporter, self.doneflag)
-        self.dls[torrentfile] = dl
+        dl.start()
+        self.dls[dl.hash_info] = (dl, torrentfile)
         return dl
 
     def listen_forever(self):
@@ -500,20 +505,33 @@ class MultiDL():
         #self.d.display({'activity':_("shutting down"), 'fractionDone':0})
         #self.torrent.shutdown()
 
-    def shutdown(self, torrentfile = None):
+    def shutdown(self, sha1 = None, torrentfile = None):
         #TODO: get the hash_info to avoid the same file with two torrent file
         print "MultiDl.shutdown"
         try:
             #delete the downloader to avoid mem leak?
-            if torrentfile:
-                if self.dls.has_key(torrentfile):
-                    self.dls[torrentfile].shutdown()
-                    del self.dls[torrentfile]
+            if sha1:
+                print "shutdown sha1: %s..." %sha1
+                if self.dls.has_key(sha1):
+                    dl, _ = self.dls[sha1]
+                    dl.shutdown()
+                    print "shutdown sha1: %s ok" %sha1
+                    del self.dls[sha1]
                 else:
-                    print "%s is not downloading"%torrentfile
+                    print "sha1: %s is not downloading"%torrentfile
+            elif torrentfile:
+                print "shutdown file: %s..." %torrentfile
+                for (hash_info, (dl, f)) in self.dls.items():
+                    if f == torrentfile:
+                        dl.shutdown()
+                        del self.dls[hash_info]
+                        print "shutdown file: %s ok" %torrentfile
+                        break
+
+                print "file: %s is not downloading"%torrentfile
             else:
                 #shutdown the all downloads
-                for dl in self.dls.values():
+                for (f, dl) in self.dls.values():
                     dl.shutdown()
 
                 self.dls.clear()
@@ -550,10 +568,9 @@ if __name__ == '__main__':
     #    singledl_config = {'save_as':'', 'save_in':''}
         #dl = multidl.add_dl(torrentfile, singledl_config)
         #dl.start()
-
+        #multidl.dls[dl.hash_info] = (torrentfile, dl)
 
     root = Resource()
-    root.putChild("hello", HelloResource())
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
     root.putChild("puttask", PutTask(taskqueue, multidl))
