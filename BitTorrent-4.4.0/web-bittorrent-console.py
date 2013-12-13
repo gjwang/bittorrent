@@ -531,7 +531,7 @@ class MultiDL():
                 print "file: %s is not downloading"%torrentfile
             else:
                 #shutdown the all downloads
-                for (f, dl) in self.dls.values():
+                for (dl, _) in self.dls.values():
                     dl.shutdown()
 
                 self.dls.clear()
