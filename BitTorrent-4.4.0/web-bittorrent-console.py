@@ -248,17 +248,19 @@ class BeginningPrinter(Protocol):
     def __init__(self, finished):
         self.finished = finished
         self.remaining = 1024 * 10
-
+        self.recv = ''
+        
     def dataReceived(self, bytes):
         if self.remaining:
-            display = bytes[:self.remaining]
+            self.recv += bytes[:self.remaining]
             print 'Some data received:'
-            print display
+            print self.recv
             self.remaining -= len(display)
 
     def connectionLost(self, reason):
         print 'Finished receiving body:', reason.getErrorMessage()
-        self.finished.callback(None)
+        if self.recv == 'success':            
+            self.finished.callback(None)
 
 class StatusReporter(object):
     def __init__(self, report_url):
@@ -275,10 +277,16 @@ class StatusReporter(object):
         self.status_msg["args"]["numpeers"] = 0
         self.status_msg["args"]["numseeds"] = 0
 
+        self.send_seedstatus_ok = False
 
     def send_status(self, statistics, torrentfile=None, sha1=None):
-        fractionDone = statistics.get('fractionDone')
         activity = statistics.get('activity')
+        if self.send_seedstatus_ok:
+            #make sure seeding status been reported success at least once
+            #if sucess report seeding status, then stop to repeat report it
+            return
+
+        fractionDone = statistics.get('fractionDone')
         timeEst = statistics.get('timeEst')
         downRate = statistics.get('downRate')
         upRate = statistics.get('upRate')
@@ -289,7 +297,6 @@ class StatusReporter(object):
             status_msg = copy.deepcopy(self.status_msg)
             status_msg["event"]  = "status_response"
 
-            activity = statistics.get('activity')
             if activity is not None:
                 status_msg["status"] = activity
                 
@@ -319,11 +326,34 @@ class StatusReporter(object):
                 status_msg["args"]["numpeers"] = statistics['numPeers']
                 status_msg["args"]["numseeds"] = statistics['numSeeds' ]
                 #status_msg["args"]["seedstatus"] = self.seedStatus
-            
-            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
 
-    def send(self, status):
-        #body = FileBodyProducer(StringIO("hello, world"))
+
+            def send_finished(ignored):
+                print "send_finished"
+                self.send_seedstatus_ok = True
+            
+            def cbResponse(response):
+                print 'Response version:', response.version
+                print 'Response code:', response.code
+                print 'type(response.code):,', type(response.code)
+                print 'Response phrase:', response.phrase
+                print 'Response headers:'
+                from pprint import pformat
+                print pformat(list(response.headers.getAllRawHeaders()))
+                if response.code == 200:
+                    finished = Deferred()
+                    finished.addCallback(send_finished)
+                    response.deliverBody(BeginningPrinter(finished))
+
+            if status_msg["status"] == 'seeding':
+                cbresponse = cbResponse
+            else:
+                #does not care response
+                cbresponse = None
+
+            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')), cbresponse=cbresponse)
+
+    def send(self, status, cbresponse):
         body = StringProducer(status)
         d = self.agent.request(
             'POST',
@@ -332,23 +362,14 @@ class StatusReporter(object):
                      'Content-Type': ['application/json']}),
             body)
 
-        def cbResponse(ignored):
-            print ignored
-            print 'Response received'
-        #d.addCallback(cbResponse)
+        d.addCallback(cbresponse)
 
-        def cbRequest(response):
-            print 'Response version:', response.version
-            print 'Response code:', response.code
-            print 'Response phrase:', response.phrase
-            print 'Response headers:'
-            from pprint import pformat
-            print pformat(list(response.headers.getAllRawHeaders()))
-            finished = Deferred()
-            response.deliverBody(BeginningPrinter(finished))
-            return finished
 
-        d.addCallback(cbRequest)
+        def error_handler(error):
+            print error 
+            print "send status failed"
+
+        d.addErrback(error_handler)
 
 
 class DL(Feedback):

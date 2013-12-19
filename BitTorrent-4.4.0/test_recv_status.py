@@ -48,6 +48,9 @@ class GetPeerStatus(resource.Resource):
             print e
             return "json format error"
 
+        if task["status"] == "seeding":
+            return "success"
+        
         #print task
 
         return "I am request #" + str(self.numberRequests) + "\n"
