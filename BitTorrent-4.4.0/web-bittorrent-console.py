@@ -278,9 +278,12 @@ class StatusReporter(object):
         self.status_msg["args"]["numseeds"] = 0
 
         self.send_seedstatus_ok = False
+        self.status = None
+        self.retries = 0
 
     def send_status(self, statistics, torrentfile=None, sha1=None):
         activity = statistics.get('activity')
+        self.status = activity
         if self.send_seedstatus_ok:
             #make sure seeding status been reported success at least once
             #if sucess report seeding status, then stop to repeat report it
@@ -326,34 +329,35 @@ class StatusReporter(object):
                 status_msg["args"]["numpeers"] = statistics['numPeers']
                 status_msg["args"]["numseeds"] = statistics['numSeeds' ]
                 #status_msg["args"]["seedstatus"] = self.seedStatus
+                            
+            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
 
 
-            def send_finished(ignored):
-                print "send_finished"
-                self.send_seedstatus_ok = True
-            
-            def cbResponse(response):
-                print 'Response version:', response.version
-                print 'Response code:', response.code
-                print 'type(response.code):,', type(response.code)
-                print 'Response phrase:', response.phrase
-                print 'Response headers:'
-                from pprint import pformat
-                print pformat(list(response.headers.getAllRawHeaders()))
-                if response.code == 200:
-                    finished = Deferred()
-                    finished.addCallback(send_finished)
-                    response.deliverBody(BeginningPrinter(finished))
+    def send_finished(self, ignored):
+        self.send_seedstatus_ok = True        
 
-            if status_msg["status"] == 'seeding':
-                cbresponse = cbResponse
-            else:
-                #does not care response
-                cbresponse = None
+    def cb_response(self, response):
+        print 'Response version:', response.version
+        print 'Response code:', response.code
+        print 'Response phrase:', response.phrase
+        print 'Response headers:'
+        from pprint import pformat
+        print pformat(list(response.headers.getAllRawHeaders()))
+        if response.code == 200:
+            self.retries = 0
+            if self.status == 'seeding' or self.status == 'download succeeded':
+                finished = Deferred()
+                finished.addCallback(self.send_finished)
+                response.deliverBody(BeginningPrinter(finished))
+        else:
+            self.retries += 1
+            print "send status failed, response_code: %s, retries: %s" % (response.code, self.retries)
 
-            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')), cbresponse=cbresponse)
+    def cb_error_response(self, error):
+        self.retries += 1
+        print "send status failed, error: %s, retries: %s" % (str(error), self.retries)
 
-    def send(self, status, cbresponse):
+    def send(self, status):
         body = StringProducer(status)
         d = self.agent.request(
             'POST',
@@ -362,19 +366,13 @@ class StatusReporter(object):
                      'Content-Type': ['application/json']}),
             body)
 
-        d.addCallback(cbresponse)
-
-
-        def error_handler(error):
-            print error 
-            print "send status failed"
-
-        d.addErrback(error_handler)
+        d.addCallback(self.cb_response)
+        d.addErrback(self.cb_error_response)
 
 
 class DL(Feedback):
 
-    def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, status_reporter=None, doneflag=None):
+    def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, doneflag=None):
         self.doneflag = doneflag
         self.metainfo = metainfo
 
@@ -387,7 +385,6 @@ class DL(Feedback):
         self.config = config        
         self.multitorrent = multitorrent
         self.shutdownflag = False
-        self.status_reporter = status_reporter
         self.torrentfile = None
         self.torrent_name = None
         self.hash_info = None
@@ -395,6 +392,8 @@ class DL(Feedback):
 
     def run(self):
         self.d = HeadlessDisplayer(self.doneflag)
+        self.status_reporter = StatusReporter(report_peer_status_url)
+
         try:
             print 'DL.run.Multitorrent'
             if self.multitorrent is None:
@@ -469,16 +468,18 @@ class DL(Feedback):
         #if self.done:
         #    get status, display, send_status
         #     return
+    
+        if self.status_reporter.retries:
+            interval = min(60*10, self.config['display_interval'] * self.status_reporter.retries**2)
+        else:
+            interval = self.config['display_interval']
 
-        self.multitorrent.rawserver.add_task(self.get_status,
-                                             self.config['display_interval'])
+        self.multitorrent.rawserver.add_task(self.get_status, interval)
         status = self.torrent.get_status(self.config['spew'])
         self.activity = status.get('activity')
 
         self.d.display(status)
-
-        if self.status_reporter:
-            self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
+        self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
 
 
     def get_activity(self):
@@ -504,7 +505,6 @@ class MultiDL():
         self.multitorrent = Multitorrent(self.config, self.doneflag,
                                          self.global_error)
         self.dls = {}       #downloaders dict
-        self.status_reporter = StatusReporter(report_peer_status_url)
 
     def add_dl(self, torrentfile, singledl_config = {}):
         if torrentfile is not None:
@@ -514,7 +514,7 @@ class MultiDL():
         else:
             raise BTFailure(_("you must specify a .torrent file"))
 
-        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.status_reporter, self.doneflag)
+        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
         dl.start()
         self.dls[dl.hash_info] = (dl, torrentfile)
         return dl
