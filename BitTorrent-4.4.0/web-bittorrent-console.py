@@ -471,10 +471,9 @@ class DL(Feedback):
     
         if self.status_reporter.retries:
             interval = min(60*15, self.config['display_interval'] * 2**self.status_reporter.retries)
+            print "retries: %s, report status in %s seconds late" % (self.status_reporter.retries, interval)
         else:
             interval = self.config['display_interval']
-
-        print "retries: %s, report status in %s seconds late" % (self.status_reporter.retries, interval)
 
         self.multitorrent.rawserver.add_task(self.get_status, interval)
         status = self.torrent.get_status(self.config['spew'])

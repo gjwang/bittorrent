@@ -6,6 +6,7 @@ wwwroot = '/home/video' #download file store topdir
 node_domain = 'http://127.0.0.1:8080' #for example, the nginx publish domain
 http_prefix = node_domain             #only the server that made torrent need
 
+
 report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
 
 
@@ -39,13 +40,13 @@ response_msg={"taskid"  : "",
                           }
              }
 
-
+import os
 maketorent_config = {'comment': '', 
                      'filesystem_encoding': '',
                      'target': '', 
                      'language': '', 
                      'use_tracker': True, 
-                     'data_dir': '~/.bittorrent/data', 
+                     'data_dir': os.path.expanduser('~/.bittorrent/data'), 
                      'piece_size_pow2': 18, 
                      'tracker_list': '', 
                      'tracker_name': 'http://223.82.137.218:8090/announce'
@@ -56,7 +57,7 @@ downloader_config = {'one_connection_per_ip': True,
 
                      'save_in': '', 
                      'save_as': '', 
-                     'data_dir': '~/.bittorrent/data', 
+                     'data_dir': os.path.expanduser('~/.bittorrent/data'), 
 
                      'minport': 6881, 
                      'maxport': 6999, 
@@ -69,7 +70,7 @@ downloader_config = {'one_connection_per_ip': True,
 
                      'url': '', 
 
-                     'display_interval': 5, 
+                     'display_interval': 1, 
                      'max_announce_retry_interval': 30, 
 
                      'start_trackerless_client': False, 

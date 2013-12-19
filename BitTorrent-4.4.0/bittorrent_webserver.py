@@ -81,13 +81,13 @@ class AsyncDownloader():
 
     def add_task_to_multidl(self, msg):
         try:
-            sha1 = msg['args']['sha1']            
+            sha1 = msg['args'].get('sha1')
             if sha1 and self.multidl.dls.has_key(sha1):
-                #TODO: torrentfile is downloading or not
+                #torrentfile is downloading
                 dl, _= self.multidl.dls[sha1]
 
-                msg['status'] = dl.get_activity()
-                msg['result'] = 'success'
+                msg['result'] = 'failed'
+                msg['traceback'] = 'sha1:%s is already %s' % (sha1, dl.get_activity())
                 self.return_request(self.request, msg)
                 return
             
@@ -95,8 +95,8 @@ class AsyncDownloader():
                 if f == self.localtorrentfile:
                     print 'file: %s is already downloading' % self.localtorrentfile
 
-                    msg['status'] = dl.get_activity()
-                    msg['result'] = 'success'
+                    msg['result'] = 'failed'
+                    msg['traceback'] = 'file:%s is already %s' % (self.localtorrentfile,  dl.get_activity())
                     self.return_request(self.request, msg)
                     return                    
 
