@@ -428,8 +428,9 @@ class DL(Feedback):
             self.torrent = self.multitorrent.start_torrent(metainfo,
                                 Preferences(self.config), self, saveas)
         except BTFailure, e:
-            print str(e)
-            return
+            print "Exception BTFailure: ", str(e)
+            raise e
+            #return
         self.get_status()
         #self.multitorrent.rawserver.install_sigint_handler()
         #print 'DL.run.multitorrent.rawserver.listen_forever()'
@@ -540,8 +541,8 @@ class MultiDL():
                 if self.dls.has_key(sha1):
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
-                    print "shutdown sha1: %s ok" %sha1
                     del self.dls[sha1]
+                    print "shutdown sha1: %s ok" %sha1
                 else:
                     print "sha1: %s is not downloading" % sha1
             elif torrentfile:
@@ -574,26 +575,8 @@ if __name__ == '__main__':
     #uiname = 'bittorrent-console'
     #defaults = get_defaults(uiname)
 
-    #metainfo = None
-    #if len(sys.argv) <= 1:
-    #    printHelp(uiname, defaults)
-    #    sys.exit(1)
-    #try:
-        #config, args = configfile.parse_configuration_and_args(defaults,
-        #                               uiname, sys.argv[1:2], 0, 1)
-    #except BTFailure, e:
-    #    print str(e)
-    #    sys.exit(1)
-
     config = downloader_config
     multidl = MultiDL(config)
-
-    #for torrentfile in sys.argv[1:]:
-    #    print torrentfile
-    #    singledl_config = {'save_as':'', 'save_in':''}
-        #dl = multidl.add_dl(torrentfile, singledl_config)
-        #dl.start()
-        #multidl.dls[dl.hash_info] = (torrentfile, dl)
 
     root = Resource()
     root.putChild("form", FormPage())
