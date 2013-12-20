@@ -389,6 +389,8 @@ class DL(Feedback):
         self.torrent_name = None
         self.hash_info = None
         self.activity = None
+        self.interval = self.config['display_interval']
+        self.time_after_seeding = 0
 
     def run(self):
         self.d = HeadlessDisplayer(self.doneflag)
@@ -463,19 +465,20 @@ class DL(Feedback):
             #status = 'shutdown'
             #self.status_reporter.send_status(status)
             return
-
-        #TODO:
-        #if self.done:
-        #    get status, display, send_status
-        #     return
-    
+        
         if self.status_reporter.retries:
-            interval = min(60*15, self.config['display_interval'] * 2**self.status_reporter.retries)
-            print "retries: %s, report status in %s seconds late" % (self.status_reporter.retries, interval)
+            self.interval = min(60*15, self.config['display_interval']*2**self.status_reporter.retries)
+            print "retries: %s, report status in %s seconds late" % (self.status_reporter.retries, self.interval)
+        elif self.activity == 'seeding':
+            #reduce the frequency of getting seeding status 
+            self.time_after_seeding +=1
+            self.interval = min(60*30, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            print "status: %s, get status in %s seconds late" % (self.activity, self.interval)
         else:
-            interval = self.config['display_interval']
+            self.interval = self.config['display_interval']
+            print "status: %s, get status in %s seconds late" % (self.activity, self.interval)
 
-        self.multitorrent.rawserver.add_task(self.get_status, interval)
+        self.multitorrent.rawserver.add_task(self.get_status, self.interval)
         status = self.torrent.get_status(self.config['spew'])
         self.activity = status.get('activity')
 
@@ -540,7 +543,7 @@ class MultiDL():
                     print "shutdown sha1: %s ok" %sha1
                     del self.dls[sha1]
                 else:
-                    print "sha1: %s is not downloading"%torrentfile
+                    print "sha1: %s is not downloading" % sha1
             elif torrentfile:
                 print "shutdown file: %s..." %torrentfile
                 for (hash_info, (dl, f)) in self.dls.items():
