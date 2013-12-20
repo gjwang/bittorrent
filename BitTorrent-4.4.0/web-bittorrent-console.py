@@ -253,12 +253,11 @@ class BeginningPrinter(Protocol):
     def dataReceived(self, bytes):
         if self.remaining:
             self.recv += bytes[:self.remaining]
-            print 'Some data received:'
-            print self.recv
             self.remaining -= len(display)
 
     def connectionLost(self, reason):
-        print 'Finished receiving body:', reason.getErrorMessage()
+        print 'received: ', self.recv
+        #print 'Finished receiving body:', reason.getErrorMessage()
         if self.recv == 'success':            
             self.finished.callback(None)
 
@@ -335,14 +334,15 @@ class StatusReporter(object):
 
     def send_finished(self, ignored):
         self.send_seedstatus_ok = True        
+        print "send seeding status success"
 
     def cb_response(self, response):
-        print 'Response version:', response.version
+        #print 'Response version:', response.version
         print 'Response code:', response.code
-        print 'Response phrase:', response.phrase
-        print 'Response headers:'
-        from pprint import pformat
-        print pformat(list(response.headers.getAllRawHeaders()))
+        #print 'Response phrase:', response.phrase
+        #print 'Response headers:'
+        #from pprint import pformat
+        #print pformat(list(response.headers.getAllRawHeaders()))
         if response.code == 200:
             self.retries = 0
             if self.status == 'seeding' or self.status == 'download succeeded':
