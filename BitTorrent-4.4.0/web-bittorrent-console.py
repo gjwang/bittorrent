@@ -54,7 +54,7 @@ import json
 import cgi
 
 from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
-from conf import report_peer_status_url, response_msg, downloader_config
+from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port
 
 
 def fmttime(n):
@@ -589,7 +589,7 @@ if __name__ == '__main__':
     factory = Site(root)
     #from twisted.internet import pollreactor
     #pollreactor.install()
-    reactor.listenTCP(8090, factory)
+    reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
     #print 'reactor.run()'
     #reactor.run()
 
