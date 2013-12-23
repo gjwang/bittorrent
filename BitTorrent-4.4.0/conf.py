@@ -2,10 +2,11 @@ NodeIP   = "127.0.0.1"
 NodeZone = "beijing"               #the node belong the the area zone
 NodeID   = NodeZone + "_" + NodeIP #every peer should define a unique NodeID
 
+bt_remote_ctrl_listen_port = 8090
+
 wwwroot = '/home/video' #download file store topdir
 node_domain = 'http://127.0.0.1:8080' #for example, the nginx publish domain
 http_prefix = node_domain             #only the server that made torrent need
-
 
 report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
 
@@ -70,7 +71,7 @@ downloader_config = {'one_connection_per_ip': True,
 
                      'url': '', 
 
-                     'display_interval': 1, 
+                     'display_interval': 5, 
                      'max_announce_retry_interval': 30, 
 
                      'start_trackerless_client': False, 
