@@ -25,6 +25,12 @@ from time import time, strftime
 from cStringIO import StringIO
 import binascii
 
+import logging
+import logging.handlers
+from logging.handlers import TimedRotatingFileHandler
+from twisted.python import log
+from twisted.python.logfile import DailyLogFile
+
 from BitTorrent.download import Feedback, Multitorrent
 from BitTorrent.defaultargs import get_defaults
 from BitTorrent.parseargs import printHelp
@@ -54,7 +60,7 @@ import json
 import cgi
 
 from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
-from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port
+from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port, logfile
 
 
 def fmttime(n):
@@ -410,7 +416,6 @@ class DL(Feedback):
             torrent_name = metainfo.name_fs
             if self.torrentfile is None:
                 self.torrentfile = '.'.join([torrent_name, 'torrent'])
-            #self.torrent_name = torrent_name
 
             if config['save_as']:
                 if config['save_in']:
@@ -424,13 +429,14 @@ class DL(Feedback):
 
             self.d.set_torrent_values(metainfo.name, os.path.abspath(saveas),
                                 metainfo.total_bytes, len(metainfo.hashes))
-            print 'DL.run.multitorrent.start_torrent'
+
+            log.msg("start_torrent: ", saveas)
             self.torrent = self.multitorrent.start_torrent(metainfo,
                                 Preferences(self.config), self, saveas)
         except BTFailure, e:
-            print "Exception BTFailure: ", str(e)
+            log.msg("start_torrent raise Exception BTFailure: %s", str(e))            
             raise e
-            #return
+
         self.get_status()
         #self.multitorrent.rawserver.install_sigint_handler()
         #print 'DL.run.multitorrent.rawserver.listen_forever()'
@@ -474,10 +480,10 @@ class DL(Feedback):
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
             self.interval = min(60*30, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
-            print "status: %s, get status in %s seconds late" % (self.activity, self.interval)
+            print "status: %s, get status in %s seconds later" % (self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
-            print "status: %s, get status in %s seconds late" % (self.activity, self.interval)
+            print "status: %s, get status in %s seconds later" % (self.activity, self.interval)
 
         self.multitorrent.rawserver.add_task(self.get_status, self.interval)
         status = self.torrent.get_status(self.config['spew'])
@@ -526,25 +532,25 @@ class MultiDL():
 
     def listen_forever(self):
         self.multitorrent.rawserver.install_sigint_handler()
-        print 'MultiDL.run.multitorrent.rawserver.listen_forever()'
+        log.msg('MultiDL.run.multitorrent.rawserver.listen_forever()')
         self.multitorrent.rawserver.listen_forever()
         #self.d.display({'activity':_("shutting down"), 'fractionDone':0})
         #self.torrent.shutdown()
 
     def shutdown(self, sha1 = None, torrentfile = None):
         #TODO: get the hash_info to avoid the same file with two torrent file
-        print "MultiDl.shutdown"
+        log.msg("MultiDl.shutdown")
         try:
             #delete the downloader to avoid mem leak?
             if sha1:
-                print "shutdown sha1: %s..." %sha1
+                log.msg("shutdown sha1: %s...", sha1)
                 if self.dls.has_key(sha1):
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
                     del self.dls[sha1]
-                    print "shutdown sha1: %s ok" %sha1
+                    log.msg("shutdown sha1: %s ok", sha1)                    
                 else:
-                    print "sha1: %s is not downloading" % sha1
+                    log.msg("sha1: %s is not downloading", sha1)
             elif torrentfile:
                 print "shutdown file: %s..." %torrentfile
                 for (hash_info, (dl, f)) in self.dls.items():
@@ -569,11 +575,20 @@ class MultiDL():
         #self.d.error(text)
         print text
 
-import Queue
-taskqueue = Queue.Queue(3)
-if __name__ == '__main__':
-    #uiname = 'bittorrent-console'
-    #defaults = get_defaults(uiname)
+
+if __name__ == '__main__':    
+    #redirect to twisted log to python stardard logger, for backCount
+    observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
+    observer.start()
+
+    log.startLogging(DailyLogFile.fromFullPath(logfile))
+
+    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=7)
+    logFormatter = logging.Formatter('%(asctime)s %(message)s')
+    logHandler.setFormatter( logFormatter )
+    logger = logging.getLogger()
+    logger.addHandler( logHandler )
+    logger.setLevel( logging.INFO )
 
     config = downloader_config
     multidl = MultiDL(config)
@@ -581,22 +596,15 @@ if __name__ == '__main__':
     root = Resource()
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
-    root.putChild("puttask", PutTask(taskqueue, multidl))
-    root.putChild("shutdowntask", ShutdownTask(taskqueue, multidl))
-    root.putChild("maketorrent", MakeTorrent(taskqueue, multidl))
-
+    root.putChild("puttask", PutTask(multidl))
+    root.putChild("shutdowntask", ShutdownTask(multidl))
+    root.putChild("maketorrent", MakeTorrent(multidl))
     
     factory = Site(root)
-    #from twisted.internet import pollreactor
-    #pollreactor.install()
+
+    logger.info("start web-bittorrent-console, listen to the port:%s", bt_remote_ctrl_listen_port)
     reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
-    #print 'reactor.run()'
-    #reactor.run()
 
-
-    print "multidl.listen_forever()"
     multidl.listen_forever()
-    multidl.shutdown()
 
-    #dl = DL(metainfo, config)
-    #dl.run()
+    multidl.shutdown()

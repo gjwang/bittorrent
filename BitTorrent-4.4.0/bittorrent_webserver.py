@@ -4,7 +4,6 @@ Created on 2013-11-29
 
 @author: gjwang
 '''
-#from multiprocessing import Process, Queue
 
 from BitTorrent.makemetafile import make_meta_files
 from BitTorrent.parseargs import parseargs, printHelp
@@ -167,8 +166,7 @@ class FormPage(Resource):
 
 class PutTask(Resource):
     tasknum = 0
-    def __init__(self, taskqueue, multidl):
-        self.taskqueue = taskqueue
+    def __init__(self, multidl):
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.response_msg = response_msg
@@ -233,8 +231,7 @@ class PutTask(Resource):
 
 class MakeTorrent(Resource):
     tasknum = 0
-    def __init__(self, taskqueue, multidl):
-        self.taskqueue = taskqueue
+    def __init__(self, multidl):
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.maketorent_config = maketorent_config
@@ -391,8 +388,7 @@ def return_request(request, msg):
 
 
 class ShutdownTask(Resource):
-    def __init__(self, taskqueue, multidl):
-        self.taskqueue = taskqueue
+    def __init__(self, multidl):
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.response_msg = response_msg
@@ -461,16 +457,13 @@ class ShutdownTask(Resource):
         return msg
 
 
-import Queue
-taskqueue = Queue.Queue(3)
-taskdict = {}
 if __name__ == "__main__":
     
     root = Resource()
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
-    root.putChild("puttask", PutTask(taskqueue))
-    root.putChild("shutdowntask", ShuddownTask(taskqueue))
+    root.putChild("puttask", PutTask())
+    root.putChild("shutdowntask", ShuddownTask())
     
     factory = Site(root)
     reactor.listenTCP(8090, factory)

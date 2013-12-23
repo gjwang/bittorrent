@@ -10,6 +10,7 @@ http_prefix = node_domain             #only the server that made torrent need
 
 report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
 
+logfile = 'log/web-bittorrent-console.log'
 
 #template, should translate into json before response
 #task template
