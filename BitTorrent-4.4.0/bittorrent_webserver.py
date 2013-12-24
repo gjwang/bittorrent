@@ -28,7 +28,34 @@ from os.path import join, dirname, basename, normpath, splitext, getsize
 
 import json
 import cgi
-from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain
+from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
+
+
+#TODO: for temp use; maybe can use twisted.cred, twisted.web.guard... instead
+def validate(func):
+    def __decorator(self, request):
+        user = request.args.get('user')
+        pwd = request.args.get('pwd')        
+
+        if (user and user[0]== bt_user) and (pwd and pwd[0] == bt_password):
+            return func(self, request)
+        else:
+            request.setResponseCode(401)
+            return 'Unauthorized'
+
+    return __decorator  
+
+class Ping(Resource):
+    @validate
+    def render_GET(self, request):
+        #if not validate(request):
+        #    request.setResponseCode(401)
+        #    return 'Unauthorized'
+
+        return 'PONG'
+    
+    def render_POST(self, request):
+        return self.render_GET(request)
 
 
 class AsyncDownloader():
@@ -149,17 +176,12 @@ class AsyncDownloader():
         deferred.addErrback(self.error_handler, self.msg)
 
 
-class Ping(Resource):
-    def render_GET(self, request):        
-        return 'PONG'
-    
-    def render_POST(self, request):
-        return self.render_GET(request)
-
 class FormPage(Resource):
+    @validate
     def render_GET(self, request):
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
 
+    @validate
     def render_POST(self, request):
         #print cgi.escape(request.content.read())
         return '<html><body>You submitted: %s</body></html>' % (cgi.escape(request.content.read()),)
@@ -177,11 +199,13 @@ class PutTask(Resource):
         request.write(msg)
         request.finish()
 
-        
+
+    @validate        
     def render_GET(self, request):
         print "recv get request"
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
 
+    @validate
     def render_POST(self, request):
         self.tasknum += 1
         content = cgi.escape(request.content.read())
@@ -300,11 +324,12 @@ class MakeTorrent(Resource):
 
         self.return_request(request, msg)
                
-        
+    @validate        
     def render_GET(self, request):
         print "recv get request"
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
 
+    @validate
     def render_POST(self, request):
         self.tasknum += 1
         content = cgi.escape(request.content.read())
@@ -398,9 +423,11 @@ class ShutdownTask(Resource):
         request.write(msg)
         request.finish()
 
+    @validate
     def render_GET(self, request):        
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
-    
+
+    @validate    
     def render_POST(self, request):
         content = cgi.escape(request.content.read())
         print content

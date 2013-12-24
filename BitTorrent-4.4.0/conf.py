@@ -1,3 +1,6 @@
+bt_user = 'admin'
+bt_password = 'admin123456'
+
 NodeIP   = "127.0.0.1"
 NodeZone = "beijing"               #the node belong the the area zone
 NodeID   = NodeZone + "_" + NodeIP #every peer should define a unique NodeID
@@ -51,7 +54,7 @@ maketorent_config = {'comment': '',
                      'data_dir': os.path.expanduser('~/.bittorrent/data'), 
                      'piece_size_pow2': 18, 
                      'tracker_list': '', 
-                     'tracker_name': 'http://223.82.137.218:8090/announce'
+                     'tracker_name': 'http://127.0.0.1:8090/announce'
                     }
 
 downloader_config = {'one_connection_per_ip': True, 
