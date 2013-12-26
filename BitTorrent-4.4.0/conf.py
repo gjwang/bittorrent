@@ -39,7 +39,7 @@ response_msg={"taskid"  : "",
               "status"  : "",
               "result"  : "",          #success, failed
               "retries" : "0",
-              "trackback": "",         #failed cause
+              "traceback": "",         #failed cause
               "args"    : {            #return value, referrence to event
                            #"sha1":""
                           }
