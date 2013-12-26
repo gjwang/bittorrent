@@ -202,6 +202,13 @@ def rmfile_and_emptypath(task, msg, request):
     localname = args.get('filename')
 
     if localname is None:
+        if torrentfileurl is None:
+            msg['result'] = 'failed'
+            msg['traceback'] = "not special delete file"
+            print msg['traceback']
+            return_request(request, msg)            
+            return 
+
         torrentfile = join(topdir, urlsplit(torrentfileurl).path[1:])
         localname = splitext(torrentfile)[0]
     else:
