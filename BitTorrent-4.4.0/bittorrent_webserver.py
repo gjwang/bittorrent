@@ -27,6 +27,9 @@ from urlparse import urlsplit
 from os.path import join, dirname, basename, normpath, splitext, getsize, dirname
 from os import errno
 
+import hashlib
+md5 = hashlib.md5
+
 import json
 import cgi
 from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
@@ -38,7 +41,7 @@ def validate(func):
         user = request.args.get('user')
         pwd = request.args.get('pwd')        
 
-        if (user and user[0]== bt_user) and (pwd and pwd[0] == bt_password):
+        if (user and user[0]== bt_user) and (pwd and pwd[0].lower() == md5(bt_password).hexdigest()):
             return func(self, request)
         else:
             request.setResponseCode(401)
