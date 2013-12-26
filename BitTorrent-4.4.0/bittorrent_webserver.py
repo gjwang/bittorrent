@@ -34,6 +34,7 @@ import json
 import cgi
 from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
 
+bt_password = md5(bt_password).hexdigest()
 
 #TODO: for temp use; maybe can use twisted.cred, twisted.web.guard... instead
 def validate(func):
@@ -41,7 +42,7 @@ def validate(func):
         user = request.args.get('user')
         pwd = request.args.get('pwd')        
 
-        if (user and user[0]== bt_user) and (pwd and pwd[0].lower() == md5(bt_password).hexdigest()):
+        if (user and user[0]== bt_user) and (pwd and pwd[0].lower() == bt_password):
             return func(self, request)
         else:
             request.setResponseCode(401)
@@ -429,7 +430,8 @@ class MakeTorrent(Resource):
                 args = task.get('args') or {}
                 print args
                 fileurl = args.get('fileurl')
-                print fileurl
+                path = urlsplit(fileurl).path[1:]
+
                 if fileurl is None:
                     msg['result'] = 'failed'
                     msg['traceback'] = "undefine fileurl in args"                    
@@ -437,13 +439,24 @@ class MakeTorrent(Resource):
                     return msg
 
                 topdir = args.get('wwwroot') or self.wwwroot
+                filename  = args.get('filename')
                 trackers = args.get('trackers') or []
 
-                localfilename = join(topdir, urlsplit(fileurl).path[1:])
+                if filename:
+                    localfilename = join(topdir, filename)
+                    path = filename
+                elif path:
+                    localfilename = join(topdir, path)
+                else:
+                    msg['result'] = 'failed'
+                    msg['traceback'] = "uneffective url path or undefine filename"                    
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+                    return msg
+                    
                 args_rsp = msg['args']
                 args_rsp['filename'] = localfilename
                 args_rsp['torrentfile'] = localfilename + '.torrent'        
-                args_rsp['torrentfileurl'] = join(self.http_prefix, urlsplit(fileurl).path[1:] + '.torrent')
+                args_rsp['torrentfileurl'] = join(self.http_prefix, path) + '.torrent'
 
                 if os.path.exists(localfilename):
                     #and getsize(localfilename) == filesize:
