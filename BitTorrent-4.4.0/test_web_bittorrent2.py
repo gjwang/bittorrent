@@ -57,16 +57,11 @@ def httppostToServer(url, data):
 
 
 if __name__ == '__main__':    
-    maketorent_server = 'http://127.0.0.1:8090' #tianjin wwwroot='/data/data/ysten'
-    #maketorent_server = 'http://127.0.0.1:8090'
+    maketorent_server = 'http://127.0.0.1:8090'
     maketorrenturl = maketorent_server + '/maketorrent'  + '?user=admin&pwd=admin123456'
     peerurls = [
                 #maketorent_server, 
-                #'http://127.0.0.1:8100', #jiangxi wwwroot='/data/project/xmlfile'
                 'http://127.0.0.1:8090', 
-                #'http://127.0.0.1:8090', #xinjiang wwwroot='/data/ysten'
-                #'http://127.0.0.1:8090', #xinjiang wwwroot='/data/ysten'
-                #'http://127.0.0.1:8090', #shanxi_taiyuan wwwroot='/home/video'
                ]
 
     for url in peerurls:
@@ -94,7 +89,7 @@ if __name__ == '__main__':
     task['taskid'] = '13241324'
     task['event'] = "maketorrent"
     task["args"] = {
-                       "trackers":["http://127.0.0.1:8090/announce", "http://tracker2.com/announce"], 
+                       "trackers":["http://223.82.137.218:8090/announce", "http://tracker2.com/announce"], 
                        "starttoseed":"",
                        "fileurl":"http://www.pathname.com/fhs/pub/fhs-2.3.pdf"
                    }
@@ -134,7 +129,8 @@ if __name__ == '__main__':
         task = copy.deepcopy(task_template)
         task['taskid'] = metainfo['args']['sha1']   
         task['event'] = "download"        
-        task['args']['sha1'] =  metainfo['args']['sha1']   
+        #task['args']['wwwroot'] = ''
+        task['args']['sha1'] =  metainfo['args']['sha1']
         task['args']['torrentfileurl'] = metainfo['args']['torrentfileurl']   
         postToServer(peerurl, task)
         time.sleep(1)
@@ -151,6 +147,20 @@ if __name__ == '__main__':
         #task['args']['sha1'] = 'ad1d2be923eecaa12e2c3066e3b89ca8572ea9e1'
         task['args']['torrentfileurl'] = 'http://125.39.95.58:80/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts.torrent'
 
+        postToServer(peerurl, task)
+    time.sleep(1)
+    print '\n\n'
+
+
+    #delete the special file by torrentfileurl
+    for peerurl in peerurls:
+        peerurl = peerurl + '/puttask' + '?user=admin&pwd=admin123456'
+        task = copy.deepcopy(task_template)
+        task['taskid'] = '13241324'
+        task['event'] = "delete"
+        #task['args']['torrentfileurl'] = 'http://125.39.95.58:80/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts.torrent'
+        task['args']['wwwroot'] = '/home/video/'
+        task['args']['filename'] = '/home/video/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts'
         postToServer(peerurl, task)
     time.sleep(1)
     print '\n\n'

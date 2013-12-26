@@ -24,7 +24,8 @@ import os
 import copy
 import urllib2
 from urlparse import urlsplit
-from os.path import join, dirname, basename, normpath, splitext, getsize
+from os.path import join, dirname, basename, normpath, splitext, getsize, dirname
+from os import errno
 
 import json
 import cgi
@@ -44,6 +45,12 @@ def validate(func):
             return 'Unauthorized'
 
     return __decorator  
+
+def return_request(request, msg):
+    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+    request.write(msg)
+    request.finish()
+
 
 class Ping(Resource):
     @validate
@@ -102,7 +109,7 @@ class AsyncDownloader():
             copy.deepcopy(self.msg)#make a new copy of response_msg
         
         msg['result'] = 'failed'         
-        msg['trackback'] = "%s" % str(error)        
+        msg['traceback'] = "%s" % str(error)        
         self.return_request(self.request, msg)
 
     def add_task_to_multidl(self, msg):
@@ -139,12 +146,12 @@ class AsyncDownloader():
             except Exception as e:
                 print str(e)
                 msg['result'] = 'failed'
-                msg['trackback'] = "multidl.add_dl Execption: %s" % str(e)
+                msg['traceback'] = "multidl.add_dl Execption: %s" % str(e)
 
         except Exception as e:
             print str(e)
             msg['result'] = 'failed'
-            msg['trackback'] = str(e)
+            msg['traceback'] = str(e)
 
         self.return_request(self.request, msg)
 
@@ -159,7 +166,7 @@ class AsyncDownloader():
             print "mkdir: %s failed: %s"%(dstdirname, exc)            
             msg = {}
             msg['result'] = 'failed'
-            msg['trackback'] = str(exc)
+            msg['traceback'] = str(exc)
             self.error_handler(exc, msg)
             return False
         else:
@@ -185,6 +192,50 @@ class FormPage(Resource):
     def render_POST(self, request):
         #print cgi.escape(request.content.read())
         return '<html><body>You submitted: %s</body></html>' % (cgi.escape(request.content.read()),)
+
+
+def rmfile_and_emptypath(task, msg, request):
+    args = task.get('args') or {}
+
+    torrentfileurl = args.get('torrentfileurl')    
+    topdir = args.get('wwwroot') or wwwroot #global var wwwroot
+    localname = args.get('filename')
+
+    if localname is None:
+        torrentfile = join(topdir, urlsplit(torrentfileurl).path[1:])
+        localname = splitext(torrentfile)[0]
+    else:
+        torrentfile = localname + '.torrent'
+    
+    msg['event'] = 'delete_response'
+    msg['result'] = 'sucess'
+
+    for f in (torrentfile, localname):
+        if os.path.exists(f):
+            try:
+                os.remove(f)
+                msg['result'] = 'sucess'
+            except OSError as ex:
+                msg['result'] = 'failed'
+                msg['traceback'] += "rmfile %s failed: %s; "%(f, ex)
+                print msg['traceback']
+        else:
+            msg['traceback'] += '%s not exists; '% f
+            print msg['traceback']
+
+    #rm empty dir, avoid empty 'holes'
+    try:
+        os.removedirs(dirname(localname))
+    except OSError as ex:
+        if ex.errno == errno.ENOTEMPTY:
+            pass
+        else:
+            msg['result'] = 'failed'
+            msg['traceback'] += "rmdir exception: %s"% ex
+            print msg['traceback']
+
+    return_request(request, msg)
+    
 
 class PutTask(Resource):
     tasknum = 0
@@ -217,11 +268,12 @@ class PutTask(Resource):
             print e
             return "json format error"
         
-        event = task.get('event')
+        event = task.get('event')        
 
         msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
         msg['taskid'] = task.get('taskid') or ''
-        
+        msg['event'] = 'puttask_response'
+
         if event == 'download':
             taskargs = task.get('args') or {}
             torrentfileurl = taskargs.get('torrentfileurl')
@@ -234,7 +286,7 @@ class PutTask(Resource):
             msg['args']['torrentfileurl'] = torrentfileurl
             msg['args']['sha1'] = taskargs.get('sha1')
 
-            topdir = task.get('wwwroot') or self.wwwroot
+            topdir = taskargs.get('wwwroot') or self.wwwroot
             
             try:
                 adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request, msg)
@@ -243,11 +295,20 @@ class PutTask(Resource):
             except Exception as e:
                 #msg = {}
                 msg['result'] = 'failed'
-                msg['trackback'] = "AsyncDownloader Exception: %s" % str(e)
+                msg['traceback'] = "AsyncDownloader Exception: %s" % str(e)
+        elif event == 'delete':
+            try:
+                rmfile_and_emptypath(task, msg, request)
+                return NOT_DONE_YET
+            except Exception as e:
+                #msg = {}
+                msg['event'] = 'delete_response'
+                msg['result'] = 'failed'
+                msg['traceback'] = "Exception: %s" % str(e)
         else:
             #msg = {}
             msg['result'] = 'failed'
-            msg['trackback'] = "unknown event: %s" % event
+            msg['traceback'] = "unknown event: %s" % event
                             
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         return msg
@@ -303,10 +364,10 @@ class MakeTorrent(Resource):
             msg['result'] = 'success'
         except BTFailure, e:
             msg['result'] = 'failed'
-            msg['trackback'] = "%s" % str(e)
+            msg['traceback'] = "%s" % str(e)
         except Exception, e:
             msg['result'] = 'failed'         
-            msg['trackback'] = "make_meta_files failed: %s" % str(e)
+            msg['traceback'] = "make_meta_files failed: %s" % str(e)
 
         #msg['args'] = args
         self.return_request(request, msg)
@@ -320,7 +381,7 @@ class MakeTorrent(Resource):
             msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
         
         msg['result'] = 'failed'         
-        msg['trackback'] = "%s" % str(error)
+        msg['traceback'] = "%s" % str(error)
 
         self.return_request(request, msg)
                
@@ -343,7 +404,7 @@ class MakeTorrent(Resource):
             msg = {}
             msg['event'] = 'maketorrent_response'
             msg['result'] = 'failed'
-            msg['trackback'] = "maketorent: json format error"
+            msg['traceback'] = "maketorent: json format error"
             msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
             return msg
 
@@ -361,7 +422,7 @@ class MakeTorrent(Resource):
                 print fileurl
                 if fileurl is None:
                     msg['result'] = 'failed'
-                    msg['trackback'] = "undefine fileurl in args"                    
+                    msg['traceback'] = "undefine fileurl in args"                    
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
 
@@ -393,23 +454,18 @@ class MakeTorrent(Resource):
             except Exception as e:
                 print str(e)
                 msg['result'] = 'failed'
-                msg['trackback'] = str(e)
+                msg['traceback'] = str(e)
                 msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
                 return msg
 
         else:  
             #msg = {}
             msg['result'] = 'failed'
-            msg['trackback'] = "unknown event: %s" % event
+            msg['traceback'] = "unknown event: %s" % event
             msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
             return msg
 
         return 'should not be here'
-
-def return_request(request, msg):
-    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
-    request.write(msg)
-    request.finish()
 
 
 class ShutdownTask(Resource):
@@ -464,10 +520,10 @@ class ShutdownTask(Resource):
                     msg['result'] = 'success'
                 except Exception as e:
                     msg['result'] = 'failed'
-                    msg['trackback'] = str(e)                                    
+                    msg['traceback'] = str(e)                                    
             else:
                 msg['result'] = 'failed'
-                msg['trackback'] = "shutdown: not special sha1 or file"
+                msg['traceback'] = "shutdown: not special sha1 or file"
         elif event == 'shutdownall':
             msg['event'] = 'shutdownall_response'
             try:
@@ -475,10 +531,11 @@ class ShutdownTask(Resource):
                 msg['result'] = 'success'
             except Exception as e:
                 msg['result'] = 'failed'
-                msg['trackback'] = str(e)
+                msg['traceback'] = str(e)
         else:                
+            #msg['event'] = 'shutdown_response'
             msg['result'] = 'failed'
-            msg['trackback'] = "unknown command"
+            msg['traceback'] = "unknown event: %s" % event
 
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         return msg
