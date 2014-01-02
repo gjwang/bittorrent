@@ -350,10 +350,15 @@ class MakeTorrent(Resource):
             print '%.1f%% complete\r' % (amount * 100),
 
         config = self.maketorent_config
-        tracker = config['tracker_name']
+	trackers = msg['args']['trackers']
+	if trackers:
+	    tracker = trackers[0]
+	else:
+            tracker = config['tracker_name']
+	    msg['trackers'] = [tracker]
 
         try:
-            meta = make_meta_files(tracker,
+            meta = make_meta_files(bytes(tracker),
                             [filename],
                             progressfunc=prog,
                             filefunc=dc,
@@ -438,10 +443,15 @@ class MakeTorrent(Resource):
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
 
+		trackers = args.get('trackers')
+		if trackers and type(trackers) is not list:
+		    msg['result'] = 'failed'
+                    msg['traceback'] = "trackers must be json array"
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+                    return msg 
+
                 topdir = args.get('wwwroot') or self.wwwroot
                 filename  = args.get('filename')
-                trackers = args.get('trackers') or []
-
                 if filename:
                     localfilename = join(topdir, filename)
                     path = filename
@@ -457,7 +467,8 @@ class MakeTorrent(Resource):
                 args_rsp['filename'] = localfilename
                 args_rsp['torrentfile'] = localfilename + '.torrent'        
                 args_rsp['torrentfileurl'] = join(self.http_prefix, path) + '.torrent'
-
+		args_rsp['trackers'] = trackers 
+	
                 if os.path.exists(localfilename):
                     #and getsize(localfilename) == filesize:
                     #hash_info == task.get('hasn_info')
