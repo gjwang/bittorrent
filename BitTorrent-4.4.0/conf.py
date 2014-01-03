@@ -4,6 +4,7 @@ bt_password = 'admin123456'
 NodeIP   = "127.0.0.1"
 NodeZone = "beijing"               #the node belong the the area zone
 NodeID   = NodeZone + "_" + NodeIP #every peer should define a unique NodeID
+AM_I_MK_METAINFO_SERVER = False     #True or False
 
 bt_remote_ctrl_listen_port = 8090
 

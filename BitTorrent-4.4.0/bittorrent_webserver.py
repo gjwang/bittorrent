@@ -32,7 +32,7 @@ md5 = hashlib.md5
 
 import json
 import cgi
-from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
+from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password, AM_I_MK_METAINFO_SERVER
 
 bt_password = md5(bt_password).hexdigest()
 
@@ -105,7 +105,8 @@ class AsyncDownloader():
         if self.localtorrentfile:
             self.add_task_to_multidl(msg)
         else:
-            msg['result'] = 'success'
+            msg['result'] = 'failed'
+            msg['traceback'] = "No torrent file: %s" % self.localtorrentfile
             return_request(self.request, msg)
 
     def error_handler(self, error, msg = None):
@@ -177,15 +178,20 @@ class AsyncDownloader():
             return True
 
     def start(self, redownload=True):
+        '''
+            redownload: redownload torrent file or not
+        '''
+
         if self.makedir() == False:
             return 
 
-        print "download %s to %s" %((self.url, self.localtorrentfile))
-
-        deferred = downloadPage(bytes(self.url), self.localtorrentfile)
-        deferred.addCallback(self.download_done, self.msg)
-        deferred.addErrback(self.error_handler, self.msg)
-
+        if redownload:
+            print "download %s to %s" %((self.url, self.localtorrentfile))
+            deferred = downloadPage(bytes(self.url), self.localtorrentfile)
+            deferred.addCallback(self.download_done, self.msg)
+            deferred.addErrback(self.error_handler, self.msg)
+        else:
+            self.download_done(context=None, msg=self.msg)
 
 class FormPage(Resource):
     @validate
@@ -301,7 +307,7 @@ class PutTask(Resource):
             
             try:
                 adl = AsyncDownloader(topdir, self.multidl, torrentfileurl, request, msg)
-                adl.start()
+                adl.start(redownload = not AM_I_MK_METAINFO_SERVER)
                 return NOT_DONE_YET
             except Exception as e:
                 #msg = {}
