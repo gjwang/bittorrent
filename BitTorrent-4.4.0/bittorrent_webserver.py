@@ -434,9 +434,9 @@ class MakeTorrent(Resource):
     def error_handler(self, error, request, msg = None):
         if msg is None:
             msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
-            msg['result'] = 'failed'         
-            msg['traceback'] = "%s" % str(error)
-            self._logger.error(msg['traceback'])
+        msg['result'] = 'failed'         
+        msg['traceback'] = "%s" % str(error)
+        self._logger.error(msg['traceback'])
 
         self.return_request(request, msg)
                
