@@ -252,6 +252,8 @@ class StringProducer(object):
 
 class BeginningPrinter(Protocol):
     def __init__(self, finished):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.finished = finished
         self.remaining = 1024 * 10
         self.recv = ''
@@ -262,13 +264,15 @@ class BeginningPrinter(Protocol):
             self.remaining -= len(display)
 
     def connectionLost(self, reason):
-        print 'received: ', self.recv
+        self._logger.info('received: ', self.recv)
         #print 'Finished receiving body:', reason.getErrorMessage()
         if self.recv == 'success':            
             self.finished.callback(None)
 
 class StatusReporter(object):
     def __init__(self, report_url):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.report_url = report_url
         self.agent = Agent(reactor)
         self.status_msg = copy.deepcopy(response_msg)
@@ -334,17 +338,18 @@ class StatusReporter(object):
                 status_msg["args"]["numpeers"] = statistics['numPeers']
                 status_msg["args"]["numseeds"] = statistics['numSeeds' ]
                 #status_msg["args"]["seedstatus"] = self.seedStatus
-                            
+
+            self._logger.info(status_msg)
             self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
 
 
     def send_finished(self, ignored):
         self.send_seedstatus_ok = True        
-        print "send seeding status success"
+        self._logger.info("send seeding status to %s success", self.report_url)
 
     def cb_response(self, response):
         #print 'Response version:', response.version
-        print 'Response code:', response.code
+        self._logger.info('Response code:', response.code)
         #print 'Response phrase:', response.phrase
         #print 'Response headers:'
         #from pprint import pformat
@@ -357,11 +362,13 @@ class StatusReporter(object):
                 response.deliverBody(BeginningPrinter(finished))
         else:
             self.retries += 1
-            print "send status failed, response_code: %s, retries: %s" % (response.code, self.retries)
+            self._logger.error("send status to %s failed, response_code: %s, retries: %s", 
+                                self.report_url, response.code, self.retries)
 
     def cb_error_response(self, error):
         self.retries += 1
-        print "send status failed, error: %s, retries: %s" % (str(error), self.retries)
+        self._logger.error("send status to %s failed, error: %s, retries: %s", self.report_url, str(error), self.retries)
+        
 
     def send(self, status):
         body = StringProducer(status)
@@ -379,6 +386,8 @@ class StatusReporter(object):
 class DL(Feedback):
 
     def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, doneflag=None):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.doneflag = doneflag
         self.metainfo = metainfo
 
@@ -386,7 +395,7 @@ class DL(Feedback):
             for k, v in singledl_config.items():
                 config[k] = v
         except Exception as e:
-            print e
+            self._logger.error("parse DL config Exception: %s", str(e))
 
         self.config = config        
         self.multitorrent = multitorrent
@@ -403,7 +412,7 @@ class DL(Feedback):
         self.status_reporter = StatusReporter(report_peer_status_url)
 
         try:
-            print 'DL.run.Multitorrent'
+            self._logger.info('DL.run.Multitorrent')
             if self.multitorrent is None:
                 self.doneflag = threading.Event()
                 self.multitorrent = Multitorrent(self.config, self.doneflag,
@@ -430,19 +439,14 @@ class DL(Feedback):
             self.d.set_torrent_values(metainfo.name, os.path.abspath(saveas),
                                 metainfo.total_bytes, len(metainfo.hashes))
 
-            log.msg("start_torrent: ", saveas)
+            self._logger.info("start_torrent: ", saveas)
             self.torrent = self.multitorrent.start_torrent(metainfo,
                                 Preferences(self.config), self, saveas)
         except BTFailure, e:
-            log.msg("start_torrent raise Exception BTFailure: %s", str(e))            
+            self._logger.error("start_torrent raise Exception BTFailure: %s", str(e))
             raise e
 
         self.get_status()
-        #self.multitorrent.rawserver.install_sigint_handler()
-        #print 'DL.run.multitorrent.rawserver.listen_forever()'
-        #self.multitorrent.rawserver.listen_forever()
-        #self.d.display({'activity':_("shutting down"), 'fractionDone':0})
-        #self.torrent.shutdown()
 
     def start(self):
         self.run()
@@ -475,15 +479,15 @@ class DL(Feedback):
         
         if self.status_reporter.retries:
             self.interval = min(60*15, self.config['display_interval']*2**self.status_reporter.retries)
-            print "retries: %s, report status in %s seconds late" % (self.status_reporter.retries, self.interval)
+            self._logger.info("retries: %s, report status in %s seconds later", self.status_reporter.retries, self.interval)
         elif self.activity == 'seeding':
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
             self.interval = min(60*30, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
-            print "status: %s, get status in %s seconds later" % (self.activity, self.interval)
+            self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
-            print "status: %s, get status in %s seconds later" % (self.activity, self.interval)
+            self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
 
         self.multitorrent.rawserver.add_task(self.get_status, self.interval)
         status = self.torrent.get_status(self.config['spew'])
@@ -511,6 +515,8 @@ class DL(Feedback):
 
 class MultiDL():
     def __init__(self, config):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.doneflag = threading.Event()
         self.config = Preferences().initWithDict(config)
         self.multitorrent = Multitorrent(self.config, self.doneflag,
@@ -532,34 +538,30 @@ class MultiDL():
 
     def listen_forever(self):
         self.multitorrent.rawserver.install_sigint_handler()
-        log.msg('MultiDL.run.multitorrent.rawserver.listen_forever()')
         self.multitorrent.rawserver.listen_forever()
-        #self.d.display({'activity':_("shutting down"), 'fractionDone':0})
-        #self.torrent.shutdown()
 
     def shutdown(self, sha1 = None, torrentfile = None):
         #TODO: get the hash_info to avoid the same file with two torrent file
-        log.msg("MultiDl.shutdown")
+        self._logger.error(MultiDl.shutdown)
         try:
             #delete the downloader to avoid mem leak?
             if sha1:
-                log.msg("shutdown sha1: %s...", sha1)
+                self._logger.error("shutdown sha1: %s...", sha1)
                 if self.dls.has_key(sha1):
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
                     del self.dls[sha1]
-                    log.msg("shutdown sha1: %s ok", sha1)                    
+                    self._logger.error("shutdown sha1: %s ok", sha1)                    
                 else:
-                    log.msg("sha1: %s is not downloading", sha1)
+                    self._logger.error("sha1: %s is not downloading", sha1)
             elif torrentfile:
-                print "shutdown file: %s..." %torrentfile
+                self._logger.error("shutdown file: %s...", torrentfile)
                 for (hash_info, (dl, f)) in self.dls.items():
                     if f == torrentfile:
                         dl.shutdown()
                         del self.dls[hash_info]
-                        print "shutdown file: %s ok" %torrentfile
+                        self._logger.error("shutdown file: %s ok", torrentfile)
                         break
-
             else:
                 #shutdown the all downloads
                 for (dl, _) in self.dls.values():
@@ -567,22 +569,22 @@ class MultiDL():
 
                 self.dls.clear()
         except Exception as e:
-            print "shutdown %s exception: %s" % (torrentfile, e)
+            self._logger.error("shutdown raise %s exception: %s", torrentfile, e)
             raise e
 
     def global_error(self, level, text):
         #self.d.error(text)
-        print text
+        self._logger.error(text)
 
 
 if __name__ == '__main__':    
     #redirect to twisted log to python stardard logger, for backCount
-    observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
-    observer.start()
+    #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
+    #observer.start()
 
-    log.startLogging(DailyLogFile.fromFullPath(logfile))
+    #log.startLogging(DailyLogFile.fromFullPath(logfile))
 
-    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=7)
+    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
     logFormatter = logging.Formatter('%(asctime)s %(message)s')
     logHandler.setFormatter( logFormatter )
     logger = logging.getLogger()
@@ -602,8 +604,8 @@ if __name__ == '__main__':
     factory = Site(root)
 
     logger.info("start web-bittorrent-console, listen to the port:%s", bt_remote_ctrl_listen_port)
+    print "start web-bittorrent-console, listen port:%s" % bt_remote_ctrl_listen_port
     reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
 
     multidl.listen_forever()
-
     multidl.shutdown()

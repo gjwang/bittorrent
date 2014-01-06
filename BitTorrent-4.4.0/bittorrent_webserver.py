@@ -26,6 +26,7 @@ import urllib2
 from urlparse import urlsplit
 from os.path import join, dirname, basename, normpath, splitext, getsize, dirname
 from os import errno
+import logging
 
 import hashlib
 md5 = hashlib.md5
@@ -46,6 +47,8 @@ def validate(func):
             return func(self, request)
         else:
             request.setResponseCode(401)
+            logger = logging.getLogger()
+            logger.error("login errro: user:%s, pwd:%s", user, pwd)
             return 'Unauthorized'
 
     return __decorator  
@@ -59,10 +62,6 @@ def return_request(request, msg):
 class Ping(Resource):
     @validate
     def render_GET(self, request):
-        #if not validate(request):
-        #    request.setResponseCode(401)
-        #    return 'Unauthorized'
-
         return 'PONG'
     
     def render_POST(self, request):
@@ -71,6 +70,8 @@ class Ping(Resource):
 
 class AsyncDownloader():
     def __init__(self, topdir, multidl, url, request, msg, filesize = None, localfilename = None):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.topdir = topdir
         self.node_domain = node_domain
         self.multidl = multidl
@@ -107,40 +108,51 @@ class AsyncDownloader():
         else:
             msg['result'] = 'failed'
             msg['traceback'] = "No torrent file: %s" % self.localtorrentfile
-            return_request(self.request, msg)
+            self._logger.error(msg['traceback'])
+            self.return_request(self.request, msg)
 
     def error_handler(self, error, msg = None):
         if msg is None:
-            copy.deepcopy(self.msg)#make a new copy of response_msg
-        
-        msg['result'] = 'failed'         
-        msg['traceback'] = "%s" % str(error)        
+            copy.deepcopy(self.msg)#make a new copy of response_msg        
+            msg['result'] = 'failed'         
+            msg['traceback'] = "%s" % str(error)    
+            self._logger.error(msg['traceback'])    
+
         self.return_request(self.request, msg)
 
     def add_task_to_multidl(self, msg):
         try:
             sha1 = msg['args'].get('sha1')
             if sha1 and self.multidl.dls.has_key(sha1):
-                #torrentfile is downloading
                 dl, _= self.multidl.dls[sha1]
 
-                msg['result'] = 'failed'
-                msg['traceback'] = 'sha1:%s is already %s' % (sha1, dl.get_activity())
+                status = dl.get_activity()
+                if status == 'seeding' or status == 'download succeeded':
+                    msg["args"]["percent"] = 100
+    
+                msg['result'] = 'sucess'
+                msg['traceback'] = 'sha1:%s is already %s' % (sha1, status)
+
+                self._logger.error(msg['traceback'])
                 self.return_request(self.request, msg)
                 return
             
             for (hash_info, (dl, f)) in self.multidl.dls.items():
                 if f == self.localtorrentfile:
-                    print 'file: %s is already downloading' % self.localtorrentfile
+                    status = dl.get_activity()
+                    if status == 'seeding' or status == 'download succeeded':
+                        msg["args"]["percent"] = 100
 
-                    msg['result'] = 'failed'
-                    msg['traceback'] = 'file:%s is already %s' % (self.localtorrentfile,  dl.get_activity())
+                    msg['result'] = 'sucess'
+                    msg['traceback'] = 'file:%s is already %s' % (self.localtorrentfile,  status)
+
+                    self._logger.error(msg['traceback'])
                     self.return_request(self.request, msg)
-                    return                    
+                    return
 
             try:
-                print "btdown %s to %s" %((self.localtorrentfile, self.localfilename))
-
+                self._logger.info("btdown %s to %s", self.localtorrentfile, self.localfilename)
+                                   
                 dl_config = {}
                 dl_config['save_as'] = self.localfilename
                 #add_dl would start to download
@@ -149,14 +161,15 @@ class AsyncDownloader():
                 msg['status'] = dl.get_activity()
                 msg['result'] = 'success'
             except Exception as e:
-                print str(e)
                 msg['result'] = 'failed'
                 msg['traceback'] = "multidl.add_dl Execption: %s" % str(e)
+                self._logger.error(msg['traceback'])
 
         except Exception as e:
-            print str(e)
             msg['result'] = 'failed'
-            msg['traceback'] = str(e)
+            msg['traceback'] = "add_task_to_multidl Execption: %s" % str(e)
+
+            self._logger.error(msg['traceback'])
 
         self.return_request(self.request, msg)
 
@@ -167,11 +180,10 @@ class AsyncDownloader():
             if not os.path.exists(dstdirname):
                 os.makedirs(dstdirname)
         except Exception, exc:
-            #logger.info("down: %s to %s failed: %s", url, self.localfilename, exc)
-            print "mkdir: %s failed: %s"%(dstdirname, exc)            
             msg = {}
             msg['result'] = 'failed'
             msg['traceback'] = str(exc)
+            self._logger.error("mkdir: %s failed: %s", dstdirname, exc)
             self.error_handler(exc, msg)
             return False
         else:
@@ -186,10 +198,10 @@ class AsyncDownloader():
             return 
 
         if redownload:
-            print "download %s to %s" %((self.url, self.localtorrentfile))
             deferred = downloadPage(bytes(self.url), self.localtorrentfile)
             deferred.addCallback(self.download_done, self.msg)
             deferred.addErrback(self.error_handler, self.msg)
+            self._logger.info("download %s to %s", self.url, self.localtorrentfile)
         else:
             self.download_done(context=None, msg=self.msg)
 
@@ -200,11 +212,12 @@ class FormPage(Resource):
 
     @validate
     def render_POST(self, request):
-        #print cgi.escape(request.content.read())
         return '<html><body>You submitted: %s</body></html>' % (cgi.escape(request.content.read()),)
 
 
 def rmfile_and_emptypath(task, msg, request):
+    logger = logging.getLogger()
+
     args = task.get('args') or {}
 
     torrentfileurl = args.get('torrentfileurl')    
@@ -215,7 +228,7 @@ def rmfile_and_emptypath(task, msg, request):
         if torrentfileurl is None:
             msg['result'] = 'failed'
             msg['traceback'] = "not special delete file"
-            print msg['traceback']
+            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
             return_request(request, msg)            
             return 
 
@@ -232,13 +245,14 @@ def rmfile_and_emptypath(task, msg, request):
             try:
                 os.remove(f)
                 msg['result'] = 'sucess'
+                logger.info('rmfile_and_emptypath: rm %s sucess', f)
             except OSError as ex:
                 msg['result'] = 'failed'
                 msg['traceback'] += "rmfile %s failed: %s; "%(f, ex)
-                print msg['traceback']
+                logger.error('rmfile_and_emptypath: %s', msg['traceback'])
         else:
             msg['traceback'] += '%s not exists; '% f
-            print msg['traceback']
+            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
 
     #rm empty dir, avoid empty 'holes'
     try:
@@ -249,7 +263,7 @@ def rmfile_and_emptypath(task, msg, request):
         else:
             msg['result'] = 'failed'
             msg['traceback'] += "rmdir exception: %s"% ex
-            print msg['traceback']
+            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
 
     return_request(request, msg)
     
@@ -257,6 +271,8 @@ def rmfile_and_emptypath(task, msg, request):
 class PutTask(Resource):
     tasknum = 0
     def __init__(self, multidl):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.response_msg = response_msg
@@ -270,33 +286,39 @@ class PutTask(Resource):
 
     @validate        
     def render_GET(self, request):
-        print "recv get request"
+        self._logger.info('recv get request')
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
 
     @validate
     def render_POST(self, request):
         self.tasknum += 1
         content = cgi.escape(request.content.read())
-        print content
+        self._logger.info('PutTask: %s', content)
+
+        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
+        msg['event'] = 'puttask_response'
+
         task = {}
         try:
             task = json.loads(content)
         except Exception as e:
-            print e
-            return "json format error"
-        
-        event = task.get('event')        
+            msg['result'] = 'failed'
+            msg['traceback'] = "json format error,  Exception: %s" % str(e)
+            self._logger.error(msg['traceback'])
+            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+            return msg
 
-        msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
+        event = task.get('event')        
         msg['taskid'] = task.get('taskid') or ''
-        msg['event'] = 'puttask_response'
 
         if event == 'download':
             taskargs = task.get('args') or {}
             torrentfileurl = taskargs.get('torrentfileurl')
 
             if torrentfileurl is None:
-                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                msg['result'] = 'failed'
+                msg['traceback'] = "undefine torrentfileurl"
+                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                 return msg
 
             msg['event'] = 'download_response'            
@@ -326,7 +348,8 @@ class PutTask(Resource):
             #msg = {}
             msg['result'] = 'failed'
             msg['traceback'] = "unknown event: %s" % event
-                            
+
+        self._logger.error(msg['traceback'])                            
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         return msg
 
@@ -334,6 +357,8 @@ class PutTask(Resource):
 class MakeTorrent(Resource):
     tasknum = 0
     def __init__(self, multidl):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.maketorent_config = maketorent_config
@@ -347,13 +372,16 @@ class MakeTorrent(Resource):
         request.finish()
 
     def maketorrent(self, filename, request, msg):
-        print 'begin to make torrent: %s'%filename
+        self._logger.debug('Going to make torrent: %s', filename)
 
         def dc(v):
-            print v
+            #print v
+            pass
 
         def prog(amount):
-            print '%.1f%% complete\r' % (amount * 100),
+            #print '%.1f%% complete\r' % (amount * 100),
+            #self._logger.debug('%.1f%% complete', amount * 100)
+            pass
 
         config = self.maketorent_config
 	trackers = msg['args']['trackers']
@@ -386,30 +414,34 @@ class MakeTorrent(Resource):
             msg['result'] = 'success'
         except BTFailure, e:
             msg['result'] = 'failed'
-            msg['traceback'] = "%s" % str(e)
+            msg['traceback'] = "Excepition BTFailure: %s" % str(e)
         except Exception, e:
             msg['result'] = 'failed'         
             msg['traceback'] = "make_meta_files failed: %s" % str(e)
 
-        #msg['args'] = args
+        if msg['result'] == 'failed':            
+            self._logger.error(msg['traceback'])
+        else:
+            self._logger.info("make_meta_files: %s sucess, sha1: %s", filename + '.torrent', msg['args']['sha1'])
+
         self.return_request(request, msg)
 
     def download_done(self, context, filename, request, msg):
-        print "down: %s done"%filename
+        self._logger.info("download: %s done", filename)
         self.maketorrent(filename, request, msg)
         
     def error_handler(self, error, request, msg = None):
         if msg is None:
-            msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg
-        
-        msg['result'] = 'failed'         
-        msg['traceback'] = "%s" % str(error)
+            msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
+            msg['result'] = 'failed'         
+            msg['traceback'] = "%s" % str(error)
+            self._logger.error(msg['traceback'])
 
         self.return_request(request, msg)
                
     @validate        
     def render_GET(self, request):
-        print "recv get request"
+        self._logger.info("recv get request")
         return '<html><body><form method="POST"><input name="the-field" type="text" /></form></body></html>'
 
     @validate
@@ -418,16 +450,19 @@ class MakeTorrent(Resource):
         content = cgi.escape(request.content.read())
         task = {}
 
-        print 'content=',content
+        self._logger.info("MakeTorrent: %s", content)
+
         try:
             task = json.loads(content)
         except Exception as e:
-            print e
             msg = {}
             msg['event'] = 'maketorrent_response'
             msg['result'] = 'failed'
             msg['traceback'] = "maketorent: json format error"
             msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+
+            self._logger.error("maketorent: json format error, Exception:%s", str(e))
+
             return msg
 
         event = task.get('event')
@@ -439,14 +474,15 @@ class MakeTorrent(Resource):
         if event == 'maketorrent':
             try:
                 args = task.get('args') or {}
-                print args
                 fileurl = args.get('fileurl')
                 path = urlsplit(fileurl).path[1:]
 
                 if fileurl is None:
                     msg['result'] = 'failed'
-                    msg['traceback'] = "undefine fileurl in args"                    
+                    msg['traceback'] = "undefine fileurl in args"
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+
+                    self._logger.info("maketorrent_response: %s", msg['traceback'])
                     return msg
 
 		trackers = args.get('trackers')
@@ -454,6 +490,8 @@ class MakeTorrent(Resource):
 		    msg['result'] = 'failed'
                     msg['traceback'] = "trackers must be json array"
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+
+                    self._logger.info("maketorrent_response: %s", msg['traceback'])
                     return msg 
 
                 topdir = args.get('wwwroot') or self.wwwroot
@@ -465,8 +503,10 @@ class MakeTorrent(Resource):
                     localfilename = join(topdir, path)
                 else:
                     msg['result'] = 'failed'
-                    msg['traceback'] = "uneffective url path or undefine filename"                    
+                    msg['traceback'] = "uneffective url path or undefine filename"
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+
+                    self._logger.info("maketorrent_response: %s", msg['traceback'])
                     return msg
                     
                 args_rsp = msg['args']
@@ -478,24 +518,25 @@ class MakeTorrent(Resource):
                 if os.path.exists(localfilename):
                     #and getsize(localfilename) == filesize:
                     #hash_info == task.get('hasn_info')
-                    print "%s already exist" % localfilename
+                    self._logger.info("maketorrent_response: %s already exist", localfilename)
                     self.maketorrent(localfilename, request, msg)
                 else:
                     dstdirname = dirname(localfilename)
                     if not os.path.exists(dirname(localfilename)):
                         os.makedirs(dstdirname)
 
-                    print "download %s to %s"%(fileurl, localfilename)
+                    self._logger.info("Going to download %s to %s", fileurl, localfilename)
+
                     deferred = downloadPage(bytes(fileurl), localfilename)
                     deferred.addCallback(self.download_done, localfilename, request, msg)
                     deferred.addErrback(self.error_handler, request, msg)
 
                 return NOT_DONE_YET
             except Exception as e:
-                print str(e)
                 msg['result'] = 'failed'
                 msg['traceback'] = str(e)
                 msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                self._logger.error("maketorrent_response: %s", msg['traceback'])
                 return msg
 
         else:  
@@ -503,13 +544,17 @@ class MakeTorrent(Resource):
             msg['result'] = 'failed'
             msg['traceback'] = "unknown event: %s" % event
             msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+            self._logger.error("maketorrent_response: %s", msg['traceback'])
             return msg
 
+        self._logger.error("maketorrent_response: should not be here")
         return 'should not be here'
 
 
 class ShutdownTask(Resource):
     def __init__(self, multidl):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.response_msg = response_msg
@@ -526,12 +571,14 @@ class ShutdownTask(Resource):
     @validate    
     def render_POST(self, request):
         content = cgi.escape(request.content.read())
-        print content
+
+        self._logger.info('ShutdownTask: %s', content)
+
         task = {}
         try:
             task = json.loads(content)
         except Exception as e:
-            print e
+            self._logger.info('ShutdownTask json format error: %s', str(e))
             return "json format error"
         
         event = task.get('event')
@@ -577,6 +624,7 @@ class ShutdownTask(Resource):
             msg['result'] = 'failed'
             msg['traceback'] = "unknown event: %s" % event
 
+        self._logger.info(msg)            
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         return msg
 
