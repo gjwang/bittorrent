@@ -114,9 +114,10 @@ class AsyncDownloader():
     def error_handler(self, error, msg = None):
         if msg is None:
             copy.deepcopy(self.msg)#make a new copy of response_msg        
-            msg['result'] = 'failed'         
-            msg['traceback'] = "%s" % str(error)    
-            self._logger.error(msg['traceback'])    
+
+        msg['result'] = 'failed'         
+        msg['traceback'] = "download %s Exception: %s" % (self.url, str(error))    
+        self._logger.error(msg['traceback'])    
 
         self.return_request(self.request, msg)
 
@@ -184,7 +185,7 @@ class AsyncDownloader():
             msg['result'] = 'failed'
             msg['traceback'] = str(exc)
             self._logger.error("mkdir: %s failed: %s", dstdirname, exc)
-            self.error_handler(exc, msg)
+            self.return_request(self.request, msg)
             return False
         else:
             return True

@@ -264,7 +264,7 @@ class BeginningPrinter(Protocol):
             self.remaining -= len(display)
 
     def connectionLost(self, reason):
-        self._logger.info('received: ', self.recv)
+        self._logger.info('received: %s', self.recv)
         #print 'Finished receiving body:', reason.getErrorMessage()
         if self.recv == 'success':            
             self.finished.callback(None)
@@ -339,7 +339,7 @@ class StatusReporter(object):
                 status_msg["args"]["numseeds"] = statistics['numSeeds' ]
                 #status_msg["args"]["seedstatus"] = self.seedStatus
 
-            self._logger.info(status_msg)
+            self._logger.info('send_status: %s', status_msg)
             self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
 
 
@@ -349,7 +349,7 @@ class StatusReporter(object):
 
     def cb_response(self, response):
         #print 'Response version:', response.version
-        self._logger.info('Response code:', response.code)
+        self._logger.info('Response code: %s', response.code)
         #print 'Response phrase:', response.phrase
         #print 'Response headers:'
         #from pprint import pformat
@@ -439,7 +439,7 @@ class DL(Feedback):
             self.d.set_torrent_values(metainfo.name, os.path.abspath(saveas),
                                 metainfo.total_bytes, len(metainfo.hashes))
 
-            self._logger.info("start_torrent: ", saveas)
+            self._logger.info("start_torrent: %s", saveas)
             self.torrent = self.multitorrent.start_torrent(metainfo,
                                 Preferences(self.config), self, saveas)
         except BTFailure, e:
@@ -542,11 +542,11 @@ class MultiDL():
 
     def shutdown(self, sha1 = None, torrentfile = None):
         #TODO: get the hash_info to avoid the same file with two torrent file
-        self._logger.error(MultiDl.shutdown)
+        self._logger.error('MultiDl.shutdown')
         try:
             #delete the downloader to avoid mem leak?
             if sha1:
-                self._logger.error("shutdown sha1: %s...", sha1)
+                self._logger.error("Going to shutdown sha1: %s", sha1)
                 if self.dls.has_key(sha1):
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
