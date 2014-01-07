@@ -17,6 +17,8 @@ from twisted.web.server import NOT_DONE_YET
 from twisted.web.resource import Resource
 from twisted.web.client import HTTPDownloader
 from twisted.web.client import downloadPage
+from twisted.web.client import Agent
+from twisted.web.http_headers import Headers
 from twisted.internet import reactor
 
 
@@ -360,6 +362,8 @@ class MakeTorrent(Resource):
     def __init__(self, multidl):
         self._logger = logging.getLogger(self.__class__.__name__)
 
+        self.agent = Agent(reactor)
+
         self.multidl = multidl
         self.wwwroot = wwwroot #global var wwwroot
         self.maketorent_config = maketorent_config
@@ -512,16 +516,11 @@ class MakeTorrent(Resource):
                     
                 args_rsp = msg['args']
                 args_rsp['filename'] = localfilename
-                args_rsp['torrentfile'] = localfilename + '.torrent'        
+                args_rsp['torrentfile'] = localfilename + '.torrent'
                 args_rsp['torrentfileurl'] = join(self.http_prefix, path) + '.torrent'
 		args_rsp['trackers'] = trackers 
-	
-                if os.path.exists(localfilename):
-                    #and getsize(localfilename) == filesize:
-                    #hash_info == task.get('hasn_info')
-                    self._logger.info("maketorrent_response: %s already exist", localfilename)
-                    self.maketorrent(localfilename, request, msg)
-                else:
+
+                def downloadfile(fileurl, localfilename):
                     dstdirname = dirname(localfilename)
                     if not os.path.exists(dirname(localfilename)):
                         os.makedirs(dstdirname)
@@ -531,15 +530,44 @@ class MakeTorrent(Resource):
                     deferred = downloadPage(bytes(fileurl), localfilename)
                     deferred.addCallback(self.download_done, localfilename, request, msg)
                     deferred.addErrback(self.error_handler, request, msg)
+	
+                if os.path.exists(localfilename):
+                    d = self.agent.request(
+                        'GET',
+                        bytes(fileurl),
+                        Headers({'User-Agent': ['Twisted Web Client'],
+                                 'Content-Type': ['text/plain']}),
+                        #body
+                        )
+
+                    def cbRequest(response):
+                        if response.length == getsize(localfilename):
+                            self._logger.info("maketorrent: %s already exist, and filesize(%s) equals", 
+                                                                     localfilename, response.length)
+                            self.maketorrent(localfilename, request, msg)
+                        else:
+                            self._logger.error("maketorrent: %s already exist, but filesize(%s)!=response.length(%s), redownload", 
+                                                                     localfilename, response.length, getsize(localfilename))
+                            downloadfile(fileurl, localfilename)
+                    
+                    def cbErrRequest(error):
+                        msg['result'] = 'failed'
+                        msg['traceback'] = "Get filesize error: %s" % error
+                        self.return_request(request, msg)
+
+                    d.addCallback(cbRequest)
+                    d.addErrback(cbErrRequest)
+                else:
+                    downloadfile(fileurl, localfilename)
 
                 return NOT_DONE_YET
             except Exception as e:
                 msg['result'] = 'failed'
                 msg['traceback'] = str(e)
-                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
                 self._logger.error("maketorrent_response: %s", msg['traceback'])
-                return msg
 
+                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                return msg
         else:  
             #msg = {}
             msg['result'] = 'failed'
