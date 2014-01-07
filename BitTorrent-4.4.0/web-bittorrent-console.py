@@ -95,6 +95,8 @@ def fmtsize(n):
 class HeadlessDisplayer(object):
 
     def __init__(self, doneflag):
+        self._logger = logging.getLogger(self.__class__.__name__)
+
         self.doneflag = doneflag
 
         self.done = False
@@ -175,18 +177,18 @@ class HeadlessDisplayer(object):
             self.peerStatus = _("%d seen now") % statistics['numPeers']
 
         for err in self.errors[-4:]:
-            print _("ERROR:\n") + err + '\n'
-        self._logger.info(_("saving:        "), self.file)
-        self._logger.info(_("file size:     "), self.fileSize)
-        self._logger.info(_("percent done:  "), self.percentDone)
-        self._logger.info(_("time left:     "), self.timeEst)
-        self._logger.info(_("download to:   "), self.downloadTo)
-        self._logger.info(_("download rate: "), self.downRate)
-        self._logger.info(_("upload rate:   "), self.upRate)
-        self._logger.info(_("share rating:  "), self.shareRating)
-        self._logger.info(_("seed status:   "), self.seedStatus)
-        self._logger.info(_("peer status:   "), self.peerStatus)
-        self._logger.info(_("done:          "), self.done)
+            self._logger.info("ERROR: %s, count(err): %d", err, len(err))
+        self._logger.info("saving:        %s", self.file)
+        self._logger.info("file size:     %s", self.fileSize)
+        self._logger.info("percent done:  %s", self.percentDone)
+        self._logger.info("time left:     %s", self.timeEst)
+        self._logger.info("download to:   %s", self.downloadTo)
+        self._logger.info("download rate: %s", self.downRate)
+        self._logger.info("upload rate:   %s", self.upRate)
+        self._logger.info("share rating:  %s", self.shareRating)
+        self._logger.info("seed status:   %s", self.seedStatus)
+        self._logger.info("peer status:   %s", self.peerStatus)
+        self._logger.info("done:          %s", self.done)
 
 
     def print_spew(self, spew):
@@ -426,13 +428,13 @@ class DL(Feedback):
             if self.torrentfile is None:
                 self.torrentfile = '.'.join([torrent_name, 'torrent'])
 
-            if config['save_as']:
-                if config['save_in']:
+            if self.config['save_as']:
+                if self.config['save_in']:
                     raise BTFailure(_("You cannot specify both --save_as and "
                                       "--save_in"))
-                saveas = config['save_as']
-            elif config['save_in']:
-                saveas = os.path.join(config['save_in'], torrent_name)
+                saveas = self.config['save_as']
+            elif self.config['save_in']:
+                saveas = os.path.join(self.config['save_in'], torrent_name)
             else:
                 saveas = torrent_name
 
