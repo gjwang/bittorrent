@@ -135,7 +135,7 @@ class HeadlessDisplayer(object):
         upRate = statistics.get('upRate')
         spew = statistics.get('spew')
 
-        print '\n\n\n\n'
+        self._logger.info('\n\n\n\n')
         if spew is not None:
             self.print_spew(spew)
 
@@ -176,17 +176,17 @@ class HeadlessDisplayer(object):
 
         for err in self.errors[-4:]:
             print _("ERROR:\n") + err + '\n'
-        print _("saving:        "), self.file
-        print _("file size:     "), self.fileSize
-        print _("percent done:  "), self.percentDone
-        print _("time left:     "), self.timeEst
-        print _("download to:   "), self.downloadTo
-        print _("download rate: "), self.downRate
-        print _("upload rate:   "), self.upRate
-        print _("share rating:  "), self.shareRating
-        print _("seed status:   "), self.seedStatus
-        print _("peer status:   "), self.peerStatus
-        print _("done:          "), self.done
+        self._logger.info(_("saving:        "), self.file)
+        self._logger.info(_("file size:     "), self.fileSize)
+        self._logger.info(_("percent done:  "), self.percentDone)
+        self._logger.info(_("time left:     "), self.timeEst)
+        self._logger.info(_("download to:   "), self.downloadTo)
+        self._logger.info(_("download rate: "), self.downRate)
+        self._logger.info(_("upload rate:   "), self.upRate)
+        self._logger.info(_("share rating:  "), self.shareRating)
+        self._logger.info(_("seed status:   "), self.seedStatus)
+        self._logger.info(_("peer status:   "), self.peerStatus)
+        self._logger.info(_("done:          "), self.done)
 
 
     def print_spew(self, spew):
@@ -230,7 +230,7 @@ class HeadlessDisplayer(object):
             else:
                 s.write(' ')
             s.write('\n')
-        print s.getvalue()
+        self._logger.info(s.getvalue())
 
 
 class StringProducer(object):
