@@ -577,20 +577,7 @@ class MultiDL():
         self._logger.error(text)
 
 
-if __name__ == '__main__':    
-    #redirect to twisted log to python stardard logger, for backCount
-    #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
-    #observer.start()
-
-    #log.startLogging(DailyLogFile.fromFullPath(logfile))
-
-    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
-    logFormatter = logging.Formatter('%(asctime)s %(message)s')
-    logHandler.setFormatter( logFormatter )
-    logger = logging.getLogger()
-    logger.addHandler( logHandler )
-    logger.setLevel( logging.INFO )
-
+def main(logger):
     config = downloader_config
     multidl = MultiDL(config)
 
@@ -603,9 +590,37 @@ if __name__ == '__main__':
     
     factory = Site(root)
 
-    logger.info("start web-bittorrent-console, listen to the port:%s", bt_remote_ctrl_listen_port)
-    print "start web-bittorrent-console, listen port:%s" % bt_remote_ctrl_listen_port
     reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
 
     multidl.listen_forever()
     multidl.shutdown()
+
+if __name__ == '__main__':
+
+    first_start = True
+    while True:
+        try:
+            #redirect to twisted log to python stardard logger, for backCount
+            #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
+            #observer.start()
+            #log.startLogging(DailyLogFile.fromFullPath(logfile))
+
+            logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
+            logFormatter = logging.Formatter('%(asctime)s %(message)s')
+            logHandler.setFormatter( logFormatter )
+            logger = logging.getLogger()
+            logger.addHandler( logHandler )
+            logger.setLevel( logging.INFO )
+            if first_start:
+                print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
+                logger.info("start web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
+                first_start = False
+
+            #main will never exit unless something unexpect happen
+            main(logger)
+        except Exception, ex:
+            logger.exception("Something awful happened!")
+            logger.error("\n\n\n\nrestart web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
+            logging.shutdown()
+
+            time.sleep(1)
