@@ -616,7 +616,7 @@ if __name__ == '__main__':
                 logger.info("start web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
                 first_start = False
 
-            #main will never exit unless something unexpect happen
+            #main will never exit unless something unexpected happen
             main(logger)
         except Exception, ex:
             logger.exception("Something awful happened!")
