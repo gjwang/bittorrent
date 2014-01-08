@@ -155,11 +155,12 @@ class AsyncDownloader():
 
             try:
                 self._logger.info("btdown %s to %s", self.localtorrentfile, self.localfilename)
-                                   
+
                 dl_config = {}
                 dl_config['save_as'] = self.localfilename
                 #add_dl would start to download
-                dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
+                #dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
+                dl = self.multidl.add_task(torrentfile=self.localtorrentfile, singledl_config = dl_config, sha1=sha1)
 
                 msg['status'] = dl.get_activity()
                 msg['result'] = 'success'
@@ -167,6 +168,7 @@ class AsyncDownloader():
                 msg['result'] = 'failed'
                 msg['traceback'] = "multidl.add_dl Execption: %s" % str(e)
                 self._logger.error(msg['traceback'])
+                self._logger.exception("multidl.add_dl Execption")
 
         except Exception as e:
             msg['result'] = 'failed'

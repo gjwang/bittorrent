@@ -21,9 +21,11 @@ import sys
 import os
 import threading
 import copy
-from time import time, strftime
+import time
+from time import strftime
 from cStringIO import StringIO
 import binascii
+import pickle
 
 import logging
 import logging.handlers
@@ -60,7 +62,9 @@ import json
 import cgi
 
 from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
-from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port, logfile
+from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port
+from conf import logfile, persistent_tasks_file, task_expire_time
+
 
 
 def fmttime(n):
@@ -177,7 +181,9 @@ class HeadlessDisplayer(object):
             self.peerStatus = _("%d seen now") % statistics['numPeers']
 
         for err in self.errors[-4:]:
-            self._logger.info("ERROR: %s, count(err): %d", err, len(err))
+            self._logger.info("ERROR: %s", err)
+        del self.errors[:]
+
         self._logger.info("saving:        %s", self.file)
         self._logger.info("file size:     %s", self.fileSize)
         self._logger.info("percent done:  %s", self.percentDone)
@@ -445,7 +451,7 @@ class DL(Feedback):
             self.torrent = self.multitorrent.start_torrent(metainfo,
                                 Preferences(self.config), self, saveas)
         except BTFailure, e:
-            self._logger.error("start_torrent raise Exception BTFailure: %s", str(e))
+            self._logger.exception("start_torrent raise Exception BTFailure: %s", str(e))
             raise e
 
         self.get_status()
@@ -523,7 +529,63 @@ class MultiDL():
         self.config = Preferences().initWithDict(config)
         self.multitorrent = Multitorrent(self.config, self.doneflag,
                                          self.global_error)
+
         self.dls = {}       #downloaders dict
+        self.tasks = {}
+
+        self.persistent_file = persistent_tasks_file
+
+        try:        
+            with open(self.persistent_file, 'rb') as f:
+                self.tasks =pickle.load(f)
+        except IOError as e:
+            pass
+        except Exception as e:
+            pass
+
+        for tsk in self.tasks:
+            task = self.tasks[tsk]
+            self._logger.error("reload task:%s", task)
+            try:
+                dl = self.add_task(torrentfile=task['torrentfile'], singledl_config=task['config'], sha1=tsk)
+            except Exception as e:
+                self._logger.error("reload task:%s Exception: %s", task, str(e))
+
+    #def __enter__(self):
+    #    print '__enter__'
+    #    self.tasks_file = open('tasks.pkl', 'r+b')
+    #    return self
+
+    def __exit__(self, *args):
+        #self.tasks_file.close()
+        self.shutdown()
+
+    def persistent_tasks(self, tasks):
+        try:
+            self._logger.info("pickle.dump task: %s", tasks)
+            with open(self.persistent_file, 'wb') as f:
+                pickle.dump(tasks, f)
+        except Exception as e:
+            self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
+
+    def add_task(self, torrentfile, singledl_config = {}, sha1=None):
+        if torrentfile is not None:
+            metainfo, errors = GetTorrent.get(torrentfile)
+            if errors:
+                raise BTFailure(_("Error reading .torrent file: ") + '\n'.join(errors))
+        else:
+            raise BTFailure(_("you must specify a .torrent file"))
+
+        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
+        dl.start()
+
+        self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
+                                    'begintime': time.time(), 'expire': task_expire_time}
+        self.persistent_tasks(self.tasks)
+        self.dls[dl.hash_info] = (dl, torrentfile)
+
+        return dl
+        
 
     def add_dl(self, torrentfile, singledl_config = {}):
         if torrentfile is not None:
@@ -553,7 +615,9 @@ class MultiDL():
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
                     del self.dls[sha1]
-                    self._logger.error("shutdown sha1: %s ok", sha1)                    
+                    del self.tasks[sha1]
+                    self.persistent_tasks(self.tasks)
+                    self._logger.error("shutdown sha1: %s OK", sha1)                    
                 else:
                     self._logger.error("sha1: %s is not downloading", sha1)
             elif torrentfile:
@@ -562,7 +626,9 @@ class MultiDL():
                     if f == torrentfile:
                         dl.shutdown()
                         del self.dls[hash_info]
-                        self._logger.error("shutdown file: %s ok", torrentfile)
+                        del self.tasks[hash_info]
+                        self.persistent_tasks(self.tasks)
+                        self._logger.error("shutdown file: %s OK", torrentfile)
                         break
             else:
                 #shutdown the all downloads
@@ -570,9 +636,13 @@ class MultiDL():
                     dl.shutdown()
 
                 self.dls.clear()
+                self.tasks.clear()
+                self.persistent_tasks(self.tasks)
+                self._logger.error("shutdownall OK")
         except Exception as e:
             self._logger.error("shutdown raise %s exception: %s", torrentfile, e)
             raise e
+
 
     def global_error(self, level, text):
         #self.d.error(text)
@@ -580,39 +650,45 @@ class MultiDL():
 
 
 def main(logger):
-    config = downloader_config
-    multidl = MultiDL(config)
-
     root = Resource()
     root.putChild("form", FormPage())
     root.putChild("ping", Ping())
-    root.putChild("puttask", PutTask(multidl))
-    root.putChild("shutdowntask", ShutdownTask(multidl))
-    root.putChild("maketorrent", MakeTorrent(multidl))
     
     factory = Site(root)
+    port = reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
+    
+    try:
+        config = downloader_config
+        multidl = MultiDL(config)
 
-    reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
+        root.putChild("puttask", PutTask(multidl))
+        root.putChild("shutdowntask", ShutdownTask(multidl))
+        root.putChild("maketorrent", MakeTorrent(multidl))
 
-    multidl.listen_forever()
-    multidl.shutdown()
+        multidl.listen_forever()
+    except Exception, ex:
+        logger.exception("MultiDL exit! Something unexpected happened!")
+
+    port.connectionLost(reason=None)
 
 if __name__ == '__main__':
+    #redirect to twisted log to python stardard logger, for backCount
+    #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
+    #observer.start()
+    #log.startLogging(DailyLogFile.fromFullPath(logfile))
+
 
     first_start = True
     while True:
         try:
-            #redirect to twisted log to python stardard logger, for backCount
-            #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
-            #observer.start()
-            #log.startLogging(DailyLogFile.fromFullPath(logfile))
-
             logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
             logFormatter = logging.Formatter('%(asctime)s %(message)s')
             logHandler.setFormatter( logFormatter )
             logger = logging.getLogger()
             logger.addHandler( logHandler )
             logger.setLevel( logging.INFO )
+
+
             if first_start:
                 print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
                 logger.info("start web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
@@ -622,7 +698,11 @@ if __name__ == '__main__':
             main(logger)
         except Exception, ex:
             logger.exception("Something awful happened!")
-            logger.error("\n\n\n\nrestart web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
-            logging.shutdown()
-
-            time.sleep(1)
+        
+        restart_later = 2
+        logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
+                             restart_later, bt_remote_ctrl_listen_port)
+        logging.shutdown()
+        time.sleep(restart_later)
+        
+    logger.error("main loop exit, should never happen in normal case!!!")
