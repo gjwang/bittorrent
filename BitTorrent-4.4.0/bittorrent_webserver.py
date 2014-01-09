@@ -232,7 +232,7 @@ def rmfile_and_emptypath(task, msg, request):
     if localname is None:
         if torrentfileurl is None:
             msg['result'] = 'failed'
-            msg['traceback'] = "not special delete file"
+            msg['traceback'] = "not specify delete file"
             logger.error('rmfile_and_emptypath: %s', msg['traceback'])
             return_request(request, msg)            
             return 
@@ -641,7 +641,7 @@ class ShutdownTask(Resource):
                     msg['traceback'] = str(e)                                    
             else:
                 msg['result'] = 'failed'
-                msg['traceback'] = "shutdown: not special sha1 or file"
+                msg['traceback'] = "shutdown: not specify sha1 or file"
         elif event == 'shutdownall':
             msg['event'] = 'shutdownall_response'
             try:
