@@ -452,10 +452,10 @@ class MakeTorrent(Resource):
             msg['event'] = 'maketorrent_response'
             msg['result'] = 'failed'
             msg['traceback'] = "maketorent: json format error"
-            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
 
             self._logger.error("maketorent: json format error, Exception:%s", str(e))
 
+            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
             return msg
 
         event = task.get('event')
@@ -472,18 +472,20 @@ class MakeTorrent(Resource):
                 if fileurl is None:
                     msg['result'] = 'failed'
                     msg['traceback'] = "undefine fileurl in args"
-                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
 
                     self._logger.info("maketorrent_response: %s", msg['traceback'])
+
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
 
 		trackers = args.get('trackers')
 		if trackers and type(trackers) is not list:
 		    msg['result'] = 'failed'
                     msg['traceback'] = "trackers must be json array"
-                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
 
                     self._logger.info("maketorrent_response: %s", msg['traceback'])
+
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg 
 
                 topdir = args.get('wwwroot') or self.wwwroot
@@ -497,9 +499,8 @@ class MakeTorrent(Resource):
                 else:
                     msg['result'] = 'failed'
                     msg['traceback'] = "uneffective url path or undefine filename"
-                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
-
                     self._logger.info("maketorrent_response: %s", msg['traceback'])
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
                     
                 args_rsp = msg['args']
@@ -543,15 +544,14 @@ class MakeTorrent(Resource):
                 msg['result'] = 'failed'
                 msg['traceback'] = "Exception: %s" % str(e)
                 self._logger.exception("maketorrent_response: %s", msg['traceback'])
-
-                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+                msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                 return msg
         else:  
             #msg = {}
             msg['result'] = 'failed'
             msg['traceback'] = "unknown event: %s" % event
-            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
             self._logger.error("maketorrent_response: %s", msg['traceback'])
+            msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
             return msg
 
         self._logger.error("maketorrent_response: should not be here")
