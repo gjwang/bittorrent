@@ -549,7 +549,7 @@ class MakeTorrent(Resource):
                             self.maketorrent(localfilename, request, msg)
                         else:
                             self._logger.error("maketorrent: %s already exist, but filesize(%s)!=response.length(%s), redownload", 
-                                                                     localfilename, response.length, getsize(localfilename))
+                                                                     localfilename, getsize(localfilename), response.length)
                             downloadfile(fileurl, localfilename)
                     
                     def cbErrRequest(error):
