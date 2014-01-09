@@ -30,6 +30,7 @@ case "$1" in
                 ;;
         restart)
                 shutdown
+                sleep 1                
                 startup
                 ;;
 

@@ -468,7 +468,6 @@ class MakeTorrent(Resource):
             try:
                 args = task.get('args') or {}
                 fileurl = args.get('fileurl')
-                path = urlsplit(fileurl).path[1:]
 
                 if fileurl is None:
                     msg['result'] = 'failed'
@@ -489,6 +488,7 @@ class MakeTorrent(Resource):
 
                 topdir = args.get('wwwroot') or self.wwwroot
                 filename  = args.get('filename')
+                path = urlsplit(fileurl).path[1:]
                 if filename:
                     localfilename = join(topdir, filename)
                     path = filename
