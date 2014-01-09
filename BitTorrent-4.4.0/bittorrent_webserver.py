@@ -541,8 +541,8 @@ class MakeTorrent(Resource):
                 return NOT_DONE_YET
             except Exception as e:
                 msg['result'] = 'failed'
-                msg['traceback'] = str(e)
-                self._logger.error("maketorrent_response: %s", msg['traceback'])
+                msg['traceback'] = "Exception: %s" % str(e)
+                self._logger.exception("maketorrent_response: %s", msg['traceback'])
 
                 msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
                 return msg
