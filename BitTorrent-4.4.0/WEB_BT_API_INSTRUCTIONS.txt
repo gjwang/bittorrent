@@ -1,0 +1,269 @@
+﻿NodeIP   = "127.0.0.1"
+NodeZone = "beijing"               #the node belong the the area zone
+NodeID   = NodeZone + "_" + NodeIP #every peer should define a unique NodeID
+
+用户名密码验证格式：对密码做MD5运算之后再发送
+http://127.0.0.1:8090:/ping?user=admin&pwd=md5(admin123456)
+验证失败返回http.code=401, Unauthorized
+
+#task template, 任务模板，所有的任务定义统一使用以下这个模板，根据事件（event）的不同，
+#定义不同的参数列表（args)
+task_template={"taskid"      : "",     #任务ID
+               "event"       : "",     #事件,比如maketorrent（制作种子）
+               "expire"      : "",     #task expire time, 任务超时时间
+               "max_retries" : "",     #任务最大重试次数
+               "args"        : {       #与事件（event）对应的参数，比如原文件fileurl
+                               #"sha1":""
+                               }
+              }
+
+
+目前定义的事件及其args参数有：
+maketorrent事件
+"event":"maketorrent"
+作用：命令种子服务器制作种子，并返回结果，返回的结果使用后面的response_msg模板定义
+参数说明：fileurl : 当fileurl为不带path（如http://www.hao123.com）情况时， 必须指定filename，以指定存储文件名
+          wwwroot : 不指定则使用启动时的默认值
+          filename: 不指定时使用fileurl 截取出来的文件名
+
+说明：这是一个同步接口，即post这个接口后，应该直接等待返回结果。
+命令执行过程，先判断本机有没有fileurl指定的文件，若没有，将文件下载到本机上，生成种子，返回种子url
+调用方式：将taskdata(json格式数据)使用http post方式调用maketorrenturl。如下所示：
+postToServer(maketorrenturl, taskdata)
+postToServer表示将taskdata（json格式）使用post方式发送给maketorrenturl
+
+示例：命令127.0.0.1:8090服务器制作种子
+maketorrenturl = http://127.0.0.1:8090/maketorrent
+taskdata=
+{
+    "args": {
+        "fileurl": "http://www.pathname.com/fhs/pub/fhs-2.3.pdf",
+        "trackers": [
+            "http://127.0.0.1:80/announce"
+        ]
+    },
+    "event": "maketorrent",
+    "expire": "",
+    "max_retries": "",
+    "taskid": "13241324"
+}
+则返回值如下：
+{
+    "args": {
+        "filename": "/home/video/fhs/pub/fhs-2.3.pdf",
+        "filesize": 510762,
+        "sha1": "b96c157579c90b199a9ce2b5ce391ee3592942e6",
+        "torrentfile": "/home/video/fhs/pub/fhs-2.3.pdf.torrent",
+        "torrentfileurl": "http://127.0.0.1:8080/fhs/pub/fhs-2.3.pdf.torrent",
+        "trackers": [
+            "http://127.0.0.1:80/announce"
+        ]
+    },
+    "event": "maketorrent_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "success",
+    "retries": "0",
+    "status": "",
+    "taskid": "13241324",
+    "traceback": ""
+}
+
+
+
+
+download事件
+"event":"dowload"
+作用：命令节点下种子文件指定的文件，
+过程：首先根据种子文件url下载种子文件，然后加载种子文件开始下载，最后返回结果（不等文件下载完成，即异步过程）
+举例：post 数据如下
+{	   
+    "taskid": "b96c157579c90b199a9ce2b5ce391ee3592942e6", 
+		"max_retries": "", 
+		"args": {
+								"torrentfileurl": "http://127.0.0.1:8080/fhs/pub/fhs-2.3.pdf.torrent"
+								#'sha1':'',       #待下载文件sha1, 可选  
+								#'wwwroot':'',    #下载存储根目录，必须保证可写。 可选。不提供则使用启动时的默认配置
+						}, 
+		"event": "download", 
+		"expire": ""
+}
+说明：下载文件存放路径wwwroot为根目录，以torrenturl域名后的文件名去的.torrent 为文件名
+以上面url为例，存放位置为wwwroot/fhs/pub/fhs-2.3.pdf
+
+
+节点返回值如下：
+{
+    "args": {
+        "filenmae": "/home/video/fhs/pub/fhs-2.3.pdf",
+        "fileurl": "http://127.0.0.1:8080/fhs/pub/fhs-2.3.pdf",
+        "sha1": null,
+        "torrentfile": "/home/video/fhs/pub/fhs-2.3.pdf.torrent",
+        "torrentfileurl": "http://127.0.0.1:8080/fhs/pub/fhs-2.3.pdf.torrent"
+    },
+    "event": "download_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "success",
+    "retries": "0",
+    "status": "Initial startup",
+    "taskid": "b96c157579c90b199a9ce2b5ce391ee3592942e6",
+    "traceback": ""
+}
+
+
+
+shutdown事件
+"event":"shutdown"
+作用：根据sha1 或者种子文件完整url，停止下载任务，或关闭对应的种子做种
+过程: 停止做种，返回结果（同步过程）
+举例：post 数据如下
+{  
+		"taskid": "13241324", 
+		"max_retries": "", 
+		"args": {
+								#sha1 和 torrentfileurl 连个参数，可以只设置其中之一，或者两个同时设置，同时设置时以sha1为准
+								#"sha1":"", 
+								"torrentfileurl": "http://127.0.0.1:80/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts.torrent"
+						}, 
+		"event": "shutdown", 
+		"expire": ""
+}
+节点返回值如下：
+{
+    "args": {},
+    "event": "shutdown_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "success",
+    "retries": "0",
+    "status": "",
+    "taskid": "13241324",
+    "traceback": ""
+}
+
+
+shutdownall事件
+"event":"shutdownall"
+作用：停止所有下载（或正在做种的）任务
+过程: 停止所有下载（或正在做种的）任务， 返回结果（同步过程）
+举例：post 数据如下
+{
+		"taskid": "13241324", 
+		"max_retries": "", 
+		"args": {}, #无需指定任何参数
+		"event": "shutdownall", 
+		"expire": ""
+}
+节点返回值如下：
+{
+    "args": {},
+    "event": "shutdownall_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "success",
+    "retries": "0",
+    "status": "",
+    "taskid": "13241324",
+    "traceback": ""
+}
+
+
+delete事件
+"event":"delete"
+作用：删除已存在的文件，默认把媒体文件和种子文件一起删除
+过程: 删除媒体文件和种子文件， 返回结果（同步过程）, 把文件删除后，如果当前留下的目录为空，则把空目录也一起递归删除
+参数说明：filename： 指定删除文件的完整路径， 
+          torrentfileurl：filename 为空（不设置）的话，使用torrentfileurl 和wwwroot 拼接出待删除的文件，
+          wwwroot：  为空的话，使用默认值 
+返回值：成功删除（文件不存在也返回成功） result：sucess； 失败： result:failed； 失败原因：traceback
+
+举例：post 数据如下
+{
+    "args": {
+        "filename": "/home/video/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts",
+        "torrentfileurl": "http://127.0.0.1:80/media/new/2013/icntv2/media/2013/12/11/0188a9f829cd4f9b81f92142991da481.ts.torrent",
+        "wwwroot": "/home/video/"
+    },
+    "event": "delete",
+    "expire": "",
+    "max_retries": "",
+    "taskid": "13241324"
+}
+
+节点返回值如下：
+{
+    "args": {},
+    "event": "delete_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "sucess",
+    "retries": "0",
+    "status": "",
+    "taskid": "13241324",
+    "trackback": ""
+}
+
+
+
+
+
+所有的执行任务返回结果模板说明如下：
+response_msg={"taskid"  : "",          #任务taskid
+              "nodeid"  : NodeID,      #节点ID，配置节点是定义
+              "nodezone": NodeZone,    #the node belong the the area zone， 节点所属地区
+              "nodeip"  : NodeIP,      #节点ip
+              "event"   : "",          #返回事件，格式：执行事件_response, 如maketorrent_response
+              "status"  : "",          #任务状态
+              "result"  : "",          #取值：success, failed。 首先检查成功与否，再取需要的其他返回值
+              "retries" : "0",         #重试次数
+              "traceback": "",         #failed cause
+              "args"    : {            #return value, referrence to event
+                           #"sha1":""  #相应于事件的具体参数
+                          }
+             }
+
+
+检测节点是否在线状态：
+pingurl = 'http://127.0.0.1:8090/ping'
+以get或post方式调用节点pingurl， 成功返回 'PONG', 代表节点在线
+postToServer(pingurl, '')
+
+
+节点下载过程状态上报url， 用于接收节点post状态信息
+report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
+举例：上报状态数据
+{
+    "args": {
+        "downrate": 0,
+        "downtotal": 0,
+        "numpeers": 0,
+        "numseeds": 0,
+        "percent": "0.0",
+        "sha1": "b96c157579c90b199a9ce2b5ce391ee3592942e6",
+        "timeleft": 0,
+        "torrentfile": "fhs-2.3.pdf.torrent",
+        "uprate": 0,
+        "uptotal": 0
+    },
+    "event": "status_response",
+    "nodeid": "beijing_127.0.0.1",
+    "nodeip": "127.0.0.1",
+    "nodezone": "beijing",
+    "result": "",
+    "retries": "0",
+    "status": "Initial startup",#'Initial startup'：初始化启动，'downloading':正在下载，'download success': 下载完成， 'seeding'：正在做种
+    "taskid": "",
+    "traceback": ""
+}
+
+说明：
+下载完成时，不一定能上报'download success'(因为这个状态一闪而过),
+但肯定能上报'seeding', 因此可以以'seeding'或者'percent':'100.0' 为下载完成标志
+如果过接收端成功接收并记录之后返回'success'，则节点不再继续上报状态。
+如何发送失败，节点使用min(60*15, interval * pow(retries, 2))回退算法延迟下次发送时间(单位：seconds)

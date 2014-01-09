@@ -372,7 +372,6 @@ class MakeTorrent(Resource):
         self.http_prefix = http_prefix
         self.response_msg = response_msg
 
-
     def return_request(self, request, msg):
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         request.write(msg)
@@ -432,20 +431,7 @@ class MakeTorrent(Resource):
             self._logger.info("make_meta_files: %s sucess, sha1: %s", filename + '.torrent', msg['args']['sha1'])
 
         self.return_request(request, msg)
-
-    def download_done(self, context, filename, request, msg):
-        self._logger.info("download: %s done", filename)
-        self.maketorrent(filename, request, msg)
         
-    def error_handler(self, error, request, msg = None):
-        if msg is None:
-            msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
-        msg['result'] = 'failed'         
-        msg['traceback'] = "%s" % str(error)
-        self._logger.error(msg['traceback'])
-
-        self.return_request(request, msg)
-               
     @validate        
     def render_GET(self, request):
         self._logger.info("recv get request")
@@ -520,21 +506,9 @@ class MakeTorrent(Resource):
                 args_rsp['filename'] = localfilename
                 args_rsp['torrentfile'] = localfilename + '.torrent'
                 args_rsp['torrentfileurl'] = join(self.http_prefix, path) + '.torrent'
-		args_rsp['trackers'] = trackers 
-
-                def downloadfile(fileurl, localfilename):
-                    dstdirname = dirname(localfilename)
-                    if not os.path.exists(dirname(localfilename)):
-                        os.makedirs(dstdirname)
-
-                    self._logger.info("Going to download %s to %s", fileurl, localfilename)
-
-                    deferred = downloadPage(bytes(fileurl), localfilename)
-                    deferred.addCallback(self.download_done, localfilename, request, msg)
-                    deferred.addErrback(self.error_handler, request, msg)
+		args_rsp['trackers'] = trackers
 	
-                if os.path.exists(localfilename):
-                    d = self.agent.request(
+                d = self.agent.request(
                         'GET',
                         bytes(fileurl),
                         Headers({'User-Agent': ['Twisted Web Client'],
@@ -542,26 +516,28 @@ class MakeTorrent(Resource):
                         #body
                         )
 
-                    def cbRequest(response):
+                def cbRequest(response):
+                    msg['args']['filesize'] = response.length
+                    if os.path.exists(localfilename):
                         if response.length == getsize(localfilename):
                             self._logger.info("maketorrent: %s already exist, and filesize(%s) equals", 
-                                                                     localfilename, response.length)
+                                                            localfilename, response.length)
                             self.maketorrent(localfilename, request, msg)
                         else:
                             self._logger.error("maketorrent: %s already exist, but filesize(%s)!=response.length(%s), redownload", 
-                                                                     localfilename, getsize(localfilename), response.length)
-                            downloadfile(fileurl, localfilename)
+                                               localfilename, getsize(localfilename), response.length)
+                            self.downloadfile(request, fileurl, localfilename, msg)
+                    else:
+                        self.downloadfile(request, fileurl, localfilename, msg)
                     
-                    def cbErrRequest(error):
-                        msg['result'] = 'failed'
-                        msg['traceback'] = "Get filesize error: %s" % error
-                        self.return_request(request, msg)
+                def cbErrRequest(error):
+                    msg['result'] = 'failed'
+                    msg['traceback'] = "Get filesize error: %s" % error
+                    self.return_request(request, msg)
 
-                    d.addCallback(cbRequest)
-                    d.addErrback(cbErrRequest)
-                else:
-                    downloadfile(fileurl, localfilename)
-
+                d.addCallback(cbRequest)
+                d.addErrback(cbErrRequest)
+                
                 return NOT_DONE_YET
             except Exception as e:
                 msg['result'] = 'failed'
@@ -580,6 +556,41 @@ class MakeTorrent(Resource):
 
         self._logger.error("maketorrent_response: should not be here")
         return 'should not be here'
+
+    def downloadfile(self, request, fileurl, localfilename, msg):
+        dstdirname = dirname(localfilename)
+        if not os.path.exists(dirname(localfilename)):
+            os.makedirs(dstdirname)
+
+        self._logger.info("Going to download %s to %s", fileurl, localfilename)
+
+        deferred = downloadPage(bytes(fileurl), localfilename)
+        deferred.addCallback(self.download_done, localfilename, request, msg)
+        deferred.addErrback(self.error_handler, request, msg)
+
+    def download_done(self, context, filename, request, msg):
+        if getsize(filename) != msg['args']['filesize']:
+            #TODO: should redownload the file
+            self._logger.error("download: %s failed, filesize(%d)!=response.length(%d)", 
+                                filename, getsize(filename), msg['args']['filesize'])
+            msg['result'] = 'failed'
+            msg['traceback'] = "download: %s failed, but filesize(%d)!=response.length(%d)" % (filename, getsize(filename), msg['args']['filesize'])
+            self.return_request(request, msg)
+            return
+        else:
+            self._logger.info("download: %s done, and filesize(%d)=response.length", filename, getsize(filename))
+
+        self.maketorrent(filename, request, msg)
+
+    def error_handler(self, error, request, msg = None):
+        if msg is None:
+            msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
+        msg['result'] = 'failed'         
+        msg['traceback'] = "%s" % str(error)
+        self._logger.error(msg['traceback'])
+
+        self.return_request(request, msg)
+               
 
 
 class ShutdownTask(Resource):
