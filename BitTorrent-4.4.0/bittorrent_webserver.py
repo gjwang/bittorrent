@@ -133,7 +133,7 @@ class AsyncDownloader():
                 if status == 'seeding' or status == 'download succeeded':
                     msg["args"]["percent"] = 100
     
-                msg['result'] = 'sucess'
+                msg['result'] = 'success'
                 msg['traceback'] = 'sha1:%s is already %s' % (sha1, status)
 
                 self._logger.error(msg['traceback'])
@@ -146,7 +146,7 @@ class AsyncDownloader():
                     if status == 'seeding' or status == 'download succeeded':
                         msg["args"]["percent"] = 100
 
-                    msg['result'] = 'sucess'
+                    msg['result'] = 'success'
                     msg['traceback'] = 'file:%s is already %s' % (self.localtorrentfile,  status)
 
                     self._logger.error(msg['traceback'])
@@ -243,14 +243,14 @@ def rmfile_and_emptypath(task, msg, request):
         torrentfile = localname + '.torrent'
     
     msg['event'] = 'delete_response'
-    msg['result'] = 'sucess'
+    msg['result'] = 'success'
 
     for f in (torrentfile, localname):
         if os.path.exists(f):
             try:
                 os.remove(f)
-                msg['result'] = 'sucess'
-                logger.info('rmfile_and_emptypath: rm %s sucess', f)
+                msg['result'] = 'success'
+                logger.info('rmfile_and_emptypath: rm %s success', f)
             except OSError as ex:
                 msg['result'] = 'failed'
                 msg['traceback'] += "rmfile %s failed: %s; "%(f, ex)
@@ -428,7 +428,7 @@ class MakeTorrent(Resource):
         if msg['result'] == 'failed':            
             self._logger.error(msg['traceback'])
         else:
-            self._logger.info("make_meta_files: %s sucess, sha1: %s", filename + '.torrent', msg['args']['sha1'])
+            self._logger.info("make_meta_files: %s success, sha1: %s", filename + '.torrent', msg['args']['sha1'])
 
         self.return_request(request, msg)
         

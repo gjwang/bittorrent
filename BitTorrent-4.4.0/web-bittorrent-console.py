@@ -303,7 +303,7 @@ class StatusReporter(object):
         self.status = activity
         if self.send_seedstatus_ok:
             #make sure seeding status been reported success at least once
-            #if sucess report seeding status, then stop to repeat report it
+            #if success report seeding status, then stop to repeat report it
             return
 
         fractionDone = statistics.get('fractionDone')
