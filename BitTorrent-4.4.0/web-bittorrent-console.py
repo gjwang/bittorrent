@@ -376,7 +376,6 @@ class StatusReporter(object):
     def cb_error_response(self, error):
         self.retries += 1
         self._logger.error("send status to %s failed, error: %s, retries: %s", self.report_url, str(error), self.retries)
-        
 
     def send(self, status):
         body = StringProducer(status)
@@ -536,26 +535,28 @@ class MultiDL():
         self.persistent_file = persistent_tasks_file
         self.persistent_tasks_enable = False        
 
+	tsks = {}
         try:        
             with open(self.persistent_file, 'rb') as f:
-                self.tasks =pickle.load(f)
+                tsks =pickle.load(f)
         except IOError as e:
             pass
         except Exception as e:
             pass
 
-        self._logger.info("persitent tasks count=%d", len(self.tasks))
-        for tsk in self.tasks:
-            task = self.tasks[tsk]
+        self._logger.info("persitent tasks count=%d", len(tsks))
+        for tsk in tsks:
+            task = tsks[tsk]
             self._logger.error("reload task:%s", task)
             try:
                 dl = self.add_task(torrentfile=task['torrentfile'], singledl_config=task['config'], sha1=tsk)
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
-            time.sleep(1) #it will task some time to check exist file
+            time.sleep(5) #it will task some time to check exist file
 
         self.persistent_tasks_enable = True	
+        #self.persistent_tasks(self.tasks)
 
     #def __enter__(self):
     #    print '__enter__'
@@ -575,8 +576,8 @@ class MultiDL():
 	if not self.persistent_tasks_enable:
             return
 
+        self._logger.info("pickle.dump task: %s, tasks_count=%d", tasks, len(tasks))
         try:
-            self._logger.info("pickle.dump task: %s, tasks_count=%d", tasks, len(tasks))
             with open(self.persistent_file, 'wb') as f:
                 pickle.dump(tasks, f)
         except Exception as e:
