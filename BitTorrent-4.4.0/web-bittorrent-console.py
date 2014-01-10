@@ -491,7 +491,7 @@ class DL(Feedback):
         elif self.activity == 'seeding':
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
-            self.interval = min(60*30, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            self.interval = min(120, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
             self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
@@ -534,6 +534,7 @@ class MultiDL():
         self.tasks = {}
 
         self.persistent_file = persistent_tasks_file
+        self.persistent_tasks_enable = False        
 
         try:        
             with open(self.persistent_file, 'rb') as f:
@@ -543,6 +544,7 @@ class MultiDL():
         except Exception as e:
             pass
 
+        self._logger.info("persitent tasks count=%d", len(self.tasks))
         for tsk in self.tasks:
             task = self.tasks[tsk]
             self._logger.error("reload task:%s", task)
@@ -551,18 +553,30 @@ class MultiDL():
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
+            time.sleep(1) #it will task some time to check exist file
+
+        self.persistent_tasks_enable = True	
+
     #def __enter__(self):
     #    print '__enter__'
     #    self.tasks_file = open('tasks.pkl', 'r+b')
     #    return self
 
     def __exit__(self, *args):
-        #self.tasks_file.close()
-        self.shutdown()
+        self._logger.error("MultiDL __exit__, shutdown all downloaders")
+        for (dl, f) in self.dls.values():
+            try:
+                dl.shutdown()
+            except Exception as e:
+                self._logger.error("shutdown downloads Exception: %s, %s", str(e), f)
+
 
     def persistent_tasks(self, tasks):
+	if not self.persistent_tasks_enable:
+            return
+
         try:
-            self._logger.info("pickle.dump task: %s", tasks)
+            self._logger.info("pickle.dump task: %s, tasks_count=%d", tasks, len(tasks))
             with open(self.persistent_file, 'wb') as f:
                 pickle.dump(tasks, f)
         except Exception as e:
@@ -676,19 +690,16 @@ if __name__ == '__main__':
     #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
     #observer.start()
     #log.startLogging(DailyLogFile.fromFullPath(logfile))
-
+    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
+    logFormatter = logging.Formatter('%(asctime)s %(message)s')
+    logHandler.setFormatter( logFormatter )
+    logger = logging.getLogger()
+    logger.addHandler( logHandler )
+    logger.setLevel( logging.INFO )
 
     first_start = True
     while True:
         try:
-            logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
-            logFormatter = logging.Formatter('%(asctime)s %(message)s')
-            logHandler.setFormatter( logFormatter )
-            logger = logging.getLogger()
-            logger.addHandler( logHandler )
-            logger.setLevel( logging.INFO )
-
-
             if first_start:
                 print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
                 logger.info("start web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
@@ -699,10 +710,9 @@ if __name__ == '__main__':
         except Exception, ex:
             logger.exception("Something awful happened!")
         
-        restart_later = 2
+        restart_later = 10
         logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
                              restart_later, bt_remote_ctrl_listen_port)
-        logging.shutdown()
         time.sleep(restart_later)
         
     logger.error("main loop exit, should never happen in normal case!!!")
