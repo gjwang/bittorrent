@@ -576,7 +576,7 @@ class MultiDL():
 	if not self.persistent_tasks_enable:
             return
 
-        self._logger.info("pickle.dump task: %s, tasks_count=%d", tasks, len(tasks))
+        self._logger.info("pickle.dump tasks_count=%d",len(tasks))
         try:
             with open(self.persistent_file, 'wb') as f:
                 pickle.dump(tasks, f)
@@ -624,19 +624,20 @@ class MultiDL():
         self._logger.error('MultiDl.shutdown')
         try:
             #delete the downloader to avoid mem leak?
+            self._logger.info("Going to shutdown sha1= %s, file= %s", sha1, torrentfile)
             if sha1:
-                self._logger.error("Going to shutdown sha1: %s", sha1)
                 if self.dls.has_key(sha1):
                     dl, _ = self.dls[sha1]
                     dl.shutdown()
                     del self.dls[sha1]
                     del self.tasks[sha1]
                     self.persistent_tasks(self.tasks)
-                    self._logger.error("shutdown sha1: %s OK", sha1)                    
+                    self._logger.error("shutdown sha1: %s OK", sha1)
+                    return
                 else:
-                    self._logger.error("sha1: %s is not downloading", sha1)
-            elif torrentfile:
-                self._logger.error("shutdown file: %s...", torrentfile)
+                    self._logger.error("shutdown sha1: %s is not downloading", sha1)
+
+            if torrentfile:
                 for (hash_info, (dl, f)) in self.dls.items():
                     if f == torrentfile:
                         dl.shutdown()
@@ -644,8 +645,11 @@ class MultiDL():
                         del self.tasks[hash_info]
                         self.persistent_tasks(self.tasks)
                         self._logger.error("shutdown file: %s OK", torrentfile)
-                        break
-            else:
+                        return
+                self._logger.error("file: %s is not downloading", torrentfile)
+
+            shutdownall = sha1 is None and torrentfile is None
+            if shutdownall:
                 #shutdown the all downloads
                 for (dl, _) in self.dls.values():
                     dl.shutdown()
@@ -654,6 +658,7 @@ class MultiDL():
                 self.tasks.clear()
                 self.persistent_tasks(self.tasks)
                 self._logger.error("shutdownall OK")
+                return
         except Exception as e:
             self._logger.error("shutdown raise %s exception: %s", torrentfile, e)
             raise e
