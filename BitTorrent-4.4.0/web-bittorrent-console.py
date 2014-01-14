@@ -490,7 +490,7 @@ class DL(Feedback):
         elif self.activity == 'seeding':
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
-            self.interval = min(120, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            self.interval = min(5*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
             self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
@@ -534,29 +534,7 @@ class MultiDL():
 
         self.persistent_file = persistent_tasks_file
         self.persistent_tasks_enable = False        
-
-	tsks = {}
-        try:        
-            with open(self.persistent_file, 'rb') as f:
-                tsks =pickle.load(f)
-        except IOError as e:
-            pass
-        except Exception as e:
-            pass
-
-        self._logger.info("persitent tasks count=%d", len(tsks))
-        for tsk in tsks:
-            task = tsks[tsk]
-            self._logger.error("reload task:%s", task)
-            try:
-                dl = self.add_task(torrentfile=task['torrentfile'], singledl_config=task['config'], sha1=tsk)
-            except Exception as e:
-                self._logger.error("reload task:%s Exception: %s", task, str(e))
-
-            time.sleep(5) #it will task some time to check exist file
-
-        self.persistent_tasks_enable = True	
-        #self.persistent_tasks(self.tasks)
+        self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
     #def __enter__(self):
     #    print '__enter__'
@@ -571,6 +549,32 @@ class MultiDL():
             except Exception as e:
                 self._logger.error("shutdown downloads Exception: %s, %s", str(e), f)
 
+
+    def reload_tasks(self):
+        tsks = {}
+        try:
+            with open(self.persistent_file, 'rb') as f:
+                tsks =pickle.load(f)
+        except IOError as e:
+            pass
+        except Exception as e:
+            pass
+
+        self._logger.info("persitent tasks count=%d", len(tsks))
+	i = 0
+        for tsk in tsks:
+            task = tsks[tsk]
+            self._logger.error("reload task:%s", task)
+            try:
+                self.multitorrent.rawserver.add_task(self.add_task, 2*i, args=(task['torrentfile'], task['config'], tsk))
+                #dl = self.add_task(torrentfile=task['torrentfile'], singledl_config=task['config'], sha1=tsk)
+            except Exception as e:
+                self._logger.error("reload task:%s Exception: %s", task, str(e))
+
+            i += 1
+
+        self.persistent_tasks_enable = True
+        #self.persistent_tasks(self.tasks)
 
     def persistent_tasks(self, tasks):
 	if not self.persistent_tasks_enable:
@@ -595,7 +599,7 @@ class MultiDL():
         dl.start()
 
         self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
-                                    'begintime': time.time(), 'expire': task_expire_time}
+                                    'begintime': int(time.time()), 'expire': task_expire_time}
         self.persistent_tasks(self.tasks)
         self.dls[dl.hash_info] = (dl, torrentfile)
 
@@ -668,7 +672,6 @@ class MultiDL():
         #self.d.error(text)
         self._logger.error(text)
 
-
 def main(logger):
     root = Resource()
     root.putChild("form", FormPage())
@@ -716,7 +719,7 @@ if __name__ == '__main__':
         except Exception, ex:
             logger.exception("Something awful happened!")
         
-        restart_later = 10
+        restart_later = 3
         logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
                              restart_later, bt_remote_ctrl_listen_port)
         time.sleep(restart_later)
