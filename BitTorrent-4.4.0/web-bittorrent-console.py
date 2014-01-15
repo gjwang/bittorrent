@@ -17,7 +17,7 @@ from __future__ import division
 from BitTorrent.platform import install_translation
 install_translation()
 
-import sys
+import sys, traceback
 import os
 import threading
 import copy
@@ -533,7 +533,6 @@ class MultiDL():
         self.tasks = {}
 
         self.persistent_file = persistent_tasks_file
-        self.persistent_tasks_enable = False        
         self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
     #def __enter__(self):
@@ -566,20 +565,14 @@ class MultiDL():
             task = tsks[tsk]
             self._logger.error("reload task:%s", task)
             try:
-                self.multitorrent.rawserver.add_task(self.add_task, 2*i, args=(task['torrentfile'], task['config'], tsk))
-                #dl = self.add_task(torrentfile=task['torrentfile'], singledl_config=task['config'], sha1=tsk)
+                self.multitorrent.rawserver.add_task(self.add_task, 2*i, 
+                                                     args=(task['torrentfile'], task['config'], tsk, False))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
             i += 1
 
-        self.persistent_tasks_enable = True
-        #self.persistent_tasks(self.tasks)
-
     def persistent_tasks(self, tasks):
-	if not self.persistent_tasks_enable:
-            return
-
         self._logger.info("pickle.dump tasks_count=%d",len(tasks))
         try:
             with open(self.persistent_file, 'wb') as f:
@@ -587,7 +580,17 @@ class MultiDL():
         except Exception as e:
             self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
 
-    def add_task(self, torrentfile, singledl_config = {}, sha1=None):
+    def add_task(self, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True):
+        if sha1 and self.dls.has_key(sha1):
+            self._logger.error('sha1: %s is already downloading', sha1)
+            return self.dls[sha1][0]
+
+        for (hash_info, (dl, f)) in self.dls.items():
+            if f == torrentfile:
+                status = dl.get_activity()
+                self._logger.error('file: %s already downloading, status: %s', f, status)
+                return dl
+
         if torrentfile is not None:
             metainfo, errors = GetTorrent.get(torrentfile)
             if errors:
@@ -600,9 +603,9 @@ class MultiDL():
 
         self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
                                     'begintime': int(time.time()), 'expire': task_expire_time}
-        self.persistent_tasks(self.tasks)
         self.dls[dl.hash_info] = (dl, torrentfile)
-
+        if is_persitent_tasks:
+            self.persistent_tasks(self.tasks)
         return dl
         
 
@@ -679,18 +682,25 @@ def main(logger):
     
     factory = Site(root)
     port = reactor.listenTCP(bt_remote_ctrl_listen_port, factory)
-    
-    try:
-        config = downloader_config
-        multidl = MultiDL(config)
 
-        root.putChild("puttask", PutTask(multidl))
-        root.putChild("shutdowntask", ShutdownTask(multidl))
-        root.putChild("maketorrent", MakeTorrent(multidl))
+    if True:    
+        try:
+            config = downloader_config
+            multidl = MultiDL(config)
 
-        multidl.listen_forever()
-    except Exception, ex:
-        logger.exception("MultiDL exit! Something unexpected happened!")
+            root.putChild("puttask", PutTask(multidl))
+            root.putChild("shutdowntask", ShutdownTask(multidl))
+            root.putChild("maketorrent", MakeTorrent(multidl))
+
+            multidl.listen_forever()
+        except Exception, ex:
+            logger.exception("MultiDL exit! Something unexpected happened!")
+        else:
+	    formatted_lines = traceback.format_exc()
+            logger.error("MultiDL exit: %s ", formatted_lines)
+        #restart_later = 3
+        #logger.error("\n\nrestart MultiDL in %s seconds", restart_later)
+        #time.sleep(restart_later)
 
     port.connectionLost(reason=None)
 
