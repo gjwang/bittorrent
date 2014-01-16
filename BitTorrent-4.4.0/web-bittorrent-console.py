@@ -565,7 +565,7 @@ class MultiDL():
             task = tsks[tsk]
             self._logger.error("reload task:%s", task)
             try:
-                self.multitorrent.rawserver.add_task(self.add_task, 2*i, 
+                self.multitorrent.rawserver.add_task(self.add_task, i, 
                                                      args=(task['torrentfile'], task['config'], tsk, False))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
@@ -702,7 +702,24 @@ def main(logger):
         #logger.error("\n\nrestart MultiDL in %s seconds", restart_later)
         #time.sleep(restart_later)
 
-    port.connectionLost(reason=None)
+    try:
+         port.stopListening()
+    except Exception as e:
+        logger.exception("port.stopListening()") 
+        try:
+            port.connectionLost(reason=None)
+        except Exception as e:
+            logger.exception("port.connectionLost(reason=None)")
+            try:
+                port.lostConnection()
+            except Exception as e:
+                logger.exception("port.lostConnection()")
+
+    try:
+        reactor.stop()
+    except Exception as e:
+        logger.exception("reactor.stop() exception!")
+
 
 if __name__ == '__main__':
     #redirect to twisted log to python stardard logger, for backCount

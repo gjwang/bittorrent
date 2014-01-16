@@ -49,12 +49,20 @@ response_msg={"taskid"  : "",
              }
 
 import os
+import os
+data_dir = os.path.expanduser('~/.bittorrent/data')
+try:
+    if not os.path.exists(os.path.join(data_dir, 'resume')):
+        os.makedirs(os.path.join(data_dir, 'resume'))
+except Exception, exc:
+    print str(exc)
+
 maketorent_config = {'comment': '', 
                      'filesystem_encoding': '',
                      'target': '', 
                      'language': '', 
                      'use_tracker': True, 
-                     'data_dir': os.path.expanduser('~/.bittorrent/data'), 
+                     'data_dir': data_dir, 
                      'piece_size_pow2': 18, 
                      'tracker_list': '', 
                      'tracker_name': 'http://127.0.0.1:8090/announce'
@@ -65,7 +73,7 @@ downloader_config = {'one_connection_per_ip': True,
 
                      'save_in': '', 
                      'save_as': '', 
-                     'data_dir': os.path.expanduser('~/.bittorrent/data'), 
+                     'data_dir': data_dir, 
 
                      'minport': 6881, 
                      'maxport': 6999, 
@@ -78,12 +86,12 @@ downloader_config = {'one_connection_per_ip': True,
 
                      'url': '', 
 
-                     'display_interval': 5, 
+                     'display_interval': 30, 
                      'max_announce_retry_interval': 30, 
 
                      'start_trackerless_client': False, 
 
-                     'rarest_first_cutoff': 100, 
+                     'rarest_first_cutoff': 10, 
                      'bad_libc_workaround': False, 
                      'ip': '', 
                      'download_slice_size': 16384, 
