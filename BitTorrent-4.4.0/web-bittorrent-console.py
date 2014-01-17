@@ -531,7 +531,7 @@ class MultiDL():
 
         self.dls = {}       #downloaders dict
         self.tasks = {}
-
+        self.expire_time = task_expire_time
         self.persistent_file = persistent_tasks_file
         self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
@@ -563,14 +563,20 @@ class MultiDL():
 	i = 0
         for tsk in tsks:
             task = tsks[tsk]
-            self._logger.error("reload task:%s", task)
+            expire = self.expire_time - (int(time.time()) - task['begintime'])
+
+            if expire < 0:
+                self._logger.info("task: %s expire, do not reload", task)
+                continue
+            self._logger.info("reload task:%s", task)
             try:
-                self.multitorrent.rawserver.add_task(self.add_task, i, 
-                                                     args=(task['torrentfile'], task['config'], tsk, False))
+                self.multitorrent.rawserver.add_task(self.add_task, i/5.0, 
+                                                     args=(task['torrentfile'], task['config'], tsk, False, expire))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
             i += 1
+        #self.persistent_tasks(self.tasks)
 
     def persistent_tasks(self, tasks):
         self._logger.info("pickle.dump tasks_count=%d",len(tasks))
@@ -580,7 +586,7 @@ class MultiDL():
         except Exception as e:
             self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
 
-    def add_task(self, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True):
+    def add_task(self, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True, expire = 0):
         if sha1 and self.dls.has_key(sha1):
             self._logger.error('sha1: %s is already downloading', sha1)
             return self.dls[sha1][0]
@@ -601,8 +607,9 @@ class MultiDL():
         dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
         dl.start()
 
+        expire = self.expire_time if expire == 0 else expire
         self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
-                                    'begintime': int(time.time()), 'expire': task_expire_time}
+                                    'begintime': int(time.time()), 'expire': expire}
         self.dls[dl.hash_info] = (dl, torrentfile)
         if is_persitent_tasks:
             self.persistent_tasks(self.tasks)
