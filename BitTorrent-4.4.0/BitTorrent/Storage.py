@@ -151,14 +151,18 @@ class Storage(object):
                 self.handles[filename].close()
                 self.handles[filename] = file(filename, 'rb+', 0)
                 self.whandles[filename] = None
-            if handlebuffer is not None and handlebuffer[-1] != filename:
-		try:
-                    handlebuffer.remove(filename)
-		except Exception as exc:
-                    import logging
-                    self._logger = logging.getLogger(self.__class__.__name__)
-		    self._logger.error("handlebuffer.remove(%s) Exception:%s", filename, str(exc))
-                handlebuffer.append(filename)
+            if handlebuffer is not None:
+                if len(handlebuffer) > 0:
+                    if handlebuffer[-1] != filename
+		        try:
+                            handlebuffer.remove(filename)
+		        except Exception as exc:
+                            import logging
+                            self._logger = logging.getLogger(self.__class__.__name__)
+		            self._logger.error("handlebuffer.remove(%s) Exception:%s", filename, str(exc))
+                        handlebuffer.append(filename)
+                else:
+                    handlebuffer.append(filename)
         else:
             if for_write:
                 self.handles[filename] = file(filename, 'rb+', 0)
