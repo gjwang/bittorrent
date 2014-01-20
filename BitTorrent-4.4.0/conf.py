@@ -49,7 +49,6 @@ response_msg={"taskid"  : "",
              }
 
 import os
-import os
 data_dir = os.path.expanduser('~/.bittorrent/data')
 try:
     if not os.path.exists(os.path.join(data_dir, 'resume')):
