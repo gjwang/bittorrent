@@ -20,6 +20,7 @@ install_translation()
 import sys, traceback
 import os
 import threading
+from multiprocessing import Process
 import copy
 import time
 from time import strftime
@@ -715,7 +716,6 @@ def main(logger):
             root.putChild("puttask", PutTask(multidl))
             root.putChild("shutdowntask", ShutdownTask(multidl))
             root.putChild("maketorrent", MakeTorrent(multidl))
-
             multidl.listen_forever()
         except Exception, ex:
             logger.exception("MultiDL exit! Something unexpected happened!")
@@ -758,7 +758,7 @@ if __name__ == '__main__':
     logger.setLevel( logging.INFO )
 
     first_start = True
-    if True:
+    while True:
         try:
             if first_start:
                 print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
@@ -766,13 +766,17 @@ if __name__ == '__main__':
                 first_start = False
 
             #main will never exit unless something unexpected happen
-            main(logger)
+            p = Process(target=main, args=(logger,))
+            p.start()
+            p.join()
         except Exception, ex:
             logger.exception("Something awful happened!")
-        
-        restart_later = 10
+        else:
+            logger.error("main loop exit, this should never happen in normal case!!!")
+
+        restart_later = 5
         logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
                              restart_later, bt_remote_ctrl_listen_port)
-        #time.sleep(restart_later)
+        time.sleep(restart_later)
         
-    logger.error("main loop exit, should never happen in normal case!!!")
+
