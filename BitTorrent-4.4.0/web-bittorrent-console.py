@@ -535,6 +535,9 @@ class MultiDL():
         self.persistent_file = persistent_tasks_file
         self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
+        self.check_expire_interval = 3600
+        self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
+
     #def __enter__(self):
     #    print '__enter__'
     #    self.tasks_file = open('tasks.pkl', 'r+b')
@@ -561,17 +564,15 @@ class MultiDL():
 
         self._logger.info("persitent tasks count=%d", len(tsks))
 	i = 0
-        for tsk in tsks:
-            task = tsks[tsk]
-            expire = self.expire_time - (int(time.time()) - task['begintime'])
-
-            if expire < 0:
-                self._logger.info("task: %s expire, do not reload", task)
+        for hash_info, task in tsks.items():
+            expire = task['expire'] - (int(time.time()) - task['begintime'])
+            if expire <= 0:
+                self._logger.info("task expire time=%s, do not reload. %s", -expire, task)
                 continue
             self._logger.info("reload task:%s", task)
             try:
-                self.multitorrent.rawserver.add_task(self.add_task, i/5.0, 
-                                                     args=(task['torrentfile'], task['config'], tsk, False, expire))
+                self.multitorrent.rawserver.add_task(self.add_task, i/3.0, 
+                                                     args=(task['torrentfile'], task['config'], hash_info, False, expire))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
@@ -607,7 +608,7 @@ class MultiDL():
         dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
         dl.start()
 
-        expire = self.expire_time if expire == 0 else expire
+        expire = self.expire_time if expire <= 0 else expire
         self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
                                     'begintime': int(time.time()), 'expire': expire}
         self.dls[dl.hash_info] = (dl, torrentfile)
@@ -677,10 +678,26 @@ class MultiDL():
             self._logger.error("shutdown raise %s exception: %s", torrentfile, e)
             raise e
 
-
     def global_error(self, level, text):
         #self.d.error(text)
         self._logger.error(text)
+
+    def del_expire_tasks(self):
+        try:
+            del_tasks=[]
+            for hash_info, task in self.tasks.items():
+                expire = task['expire'] - (int(time.time()) - task['begintime'])
+                #self._logger.info('%s, %s, %s, %s', expire, task['expire'], int(time.time()), task['begintime'])
+                if expire <= 0:
+                    del_tasks.append(hash_info)
+                    self._logger.info("task expire time=%s, shut it down. %s:%s", -expire, hash_info, task)
+          
+            for hash_info in del_tasks:
+                self.shutdown(hash_info)
+        except Exception as e:
+            self._logger.exception("del_expire_tasks exception")
+
+        self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
 
 def main(logger):
     root = Resource()
@@ -741,7 +758,7 @@ if __name__ == '__main__':
     logger.setLevel( logging.INFO )
 
     first_start = True
-    while True:
+    if True:
         try:
             if first_start:
                 print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
@@ -753,9 +770,9 @@ if __name__ == '__main__':
         except Exception, ex:
             logger.exception("Something awful happened!")
         
-        restart_later = 3
+        restart_later = 10
         logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
                              restart_later, bt_remote_ctrl_listen_port)
-        time.sleep(restart_later)
+        #time.sleep(restart_later)
         
     logger.error("main loop exit, should never happen in normal case!!!")
