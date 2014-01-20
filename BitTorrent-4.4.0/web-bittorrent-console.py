@@ -698,6 +698,7 @@ class MultiDL():
         except Exception as e:
             self._logger.exception("del_expire_tasks exception")
 
+        self._logger.info("check expire tasks in %s seconds later", self.check_expire_interval)
         self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
 
 def main(logger):
