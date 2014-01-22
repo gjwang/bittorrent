@@ -126,8 +126,8 @@ class HeadlessDisplayer(object):
 
     def finished(self):
         self.done = True
-        self.downRate = '---'
-        self.display({'activity':_("download succeeded"), 'fractionDone':1})
+        #self.downRate = '---'
+        #self.display({'activity':_("download succeeded"), 'fractionDone':1})
 
     def error(self, errormsg):
         newerrmsg = strftime('[%H:%M:%S] ') + errormsg
@@ -142,7 +142,7 @@ class HeadlessDisplayer(object):
         upRate = statistics.get('upRate')
         spew = statistics.get('spew')
 
-        self._logger.info('\n\n\n\n')
+        #self._logger.info('\n\n\n\n')
         if spew is not None:
             self.print_spew(spew)
 
@@ -484,26 +484,26 @@ class DL(Feedback):
             #status = 'shutdown'
             #self.status_reporter.send_status(status)
             return
-        
-        if self.status_reporter.retries:
-            self.interval = min(60*15, self.config['display_interval']*2**self.status_reporter.retries)
-            self._logger.info("retries: %s, report status in %s seconds later", self.status_reporter.retries, self.interval)
-        elif self.activity == 'seeding':
-            #reduce the frequency of getting seeding status 
-            self.time_after_seeding +=1
-            self.interval = min(30*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
-            self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
-        else:
-            self.interval = self.config['display_interval']
-            self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
 
-        self.multitorrent.rawserver.add_task(self.get_status, self.interval)
         status = self.torrent.get_status(self.config['spew'])
         self.activity = status.get('activity')
 
         self.d.display(status)
         self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
+        
+        if self.status_reporter.retries:
+            self.interval = min(60*15, self.config['display_interval']*2**self.status_reporter.retries)
+            self._logger.info("retries: %s, report status in %s seconds later\n\n", self.status_reporter.retries, self.interval)
+        elif self.activity == 'seeding' or self.activity == 'download succeeded':
+            #reduce the frequency of getting seeding status 
+            self.time_after_seeding +=1
+            self.interval = min(30*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            self._logger.info("status: %s, get status in %s seconds later\n\n", self.activity, self.interval)
+        else:
+            self.interval = self.config['display_interval']
+            self._logger.info("status: %s, get status in %s seconds later\n\n", self.activity, self.interval)
 
+        self.multitorrent.rawserver.add_task(self.get_status, self.interval)
 
     def get_activity(self):
         return self.activity
@@ -518,8 +518,9 @@ class DL(Feedback):
         self.doneflag.set()
 
     def finished(self, torrent):
+        self._logger.info('download finished')
         self.d.finished()
-
+        self.get_status()
 
 class MultiDL():
     def __init__(self, config):
