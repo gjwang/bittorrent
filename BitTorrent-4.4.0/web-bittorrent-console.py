@@ -491,7 +491,7 @@ class DL(Feedback):
         elif self.activity == 'seeding':
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
-            self.interval = min(5*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            self.interval = min(30*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
             self._logger.info("status: %s, get status in %s seconds later", self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
@@ -570,9 +570,10 @@ class MultiDL():
             if expire <= 0:
                 self._logger.info("task expire time=%s, do not reload. %s", -expire, task)
                 continue
-            self._logger.info("reload task:%s", task)
+            delay = i/3.0
+            self._logger.info("reload task in %.2fsec later. task:%s", delay, task)
             try:
-                self.multitorrent.rawserver.add_task(self.add_task, i/3.0, 
+                self.multitorrent.rawserver.add_task(self.add_task, delay, 
                                                      args=(task['torrentfile'], task['config'], hash_info, False, expire))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
@@ -698,7 +699,8 @@ class MultiDL():
         except Exception as e:
             self._logger.exception("del_expire_tasks exception")
 
-        self._logger.info("check expire tasks in %s seconds later", self.check_expire_interval)
+        self._logger.info("check expire tasks in %s seconds later, tasks_left=%s", 
+                           self.check_expire_interval, len(self.tasks))
         self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
 
 def main(logger):
