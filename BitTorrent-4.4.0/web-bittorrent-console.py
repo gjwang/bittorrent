@@ -760,13 +760,15 @@ if __name__ == '__main__':
     logger.addHandler( logHandler )
     logger.setLevel( logging.INFO )
 
-    first_start = True
+    total_restart_times = 0
+    unsuccess_restart_times = 0
     while True:
+        last_restart_time = time.time() 
         try:
-            if first_start:
+            if total_restart_times == 0: 
+                #first_start
                 print "start web-bittorrent-console, listening port:%s forever" % bt_remote_ctrl_listen_port
                 logger.info("start web-bittorrent-console, listening port:%s forever", bt_remote_ctrl_listen_port)
-                first_start = False
 
             #main will never exit unless something unexpected happen
             p = Process(target=main, args=(logger,))
@@ -777,9 +779,19 @@ if __name__ == '__main__':
         else:
             logger.error("main loop exit, this should never happen in normal case!!!")
 
-        restart_later = 5
-        logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds, listening port:%s forever", 
-                             restart_later, bt_remote_ctrl_listen_port)
+        total_restart_times += 1
+        if time.time() - last_restart_time < 60*5:
+            #consider last restart unsuccess
+            restart_later = min(60*30, 2**unsuccess_restart_times)
+            unsuccess_restart_times += 1
+            if unsuccess_restart_times > 1000:
+                logger.error("I can NOT endure anymore! You win, I give up! Please help me!")
+                break
+        else:
+            restart_later = 0
+            unsuccess_restart_times = 0
+            
+        logger.error("\n\n\n\nrestart web-bittorrent-console in %s seconds later. listening port:%s forever. total_restart_times=%s, latest unsuccess_restart_times=%s", 
+                      restart_later, bt_remote_ctrl_listen_port, total_restart_times, unsuccess_restart_times)
         time.sleep(restart_later)
         
-
