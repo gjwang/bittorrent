@@ -99,9 +99,10 @@ def fmtsize(n):
 
 class HeadlessDisplayer(object):
 
-    def __init__(self, doneflag):
+    def __init__(self, taskid, doneflag):
         self._logger = logging.getLogger(self.__class__.__name__)
 
+        self.taskid =  taskid
         self.doneflag = doneflag
 
         self.done = False
@@ -185,6 +186,7 @@ class HeadlessDisplayer(object):
             self._logger.info("ERROR: %s", err)
         del self.errors[:]
 
+        self._logger.info("taskid:        %s", self.taskid)
         self._logger.info("saving:        %s", self.file)
         self._logger.info("file size:     %s", self.fileSize)
         self._logger.info("percent done:  %s", self.percentDone)
@@ -279,9 +281,10 @@ class BeginningPrinter(Protocol):
             self.finished.callback(None)
 
 class StatusReporter(object):
-    def __init__(self, report_url):
+    def __init__(self, taskid, report_url):
         self._logger = logging.getLogger(self.__class__.__name__)
 
+        self.taskid = taskid
         self.report_url = report_url
         self.agent = Agent(reactor)
         self.status_msg = copy.deepcopy(response_msg)
@@ -316,6 +319,7 @@ class StatusReporter(object):
 
         if True:
             status_msg = copy.deepcopy(self.status_msg)
+            status_msg["taskid"] = self.taskid
             status_msg["event"]  = "status_response"
 
             if activity is not None:
@@ -393,9 +397,10 @@ class StatusReporter(object):
 
 class DL(Feedback):
 
-    def __init__(self, metainfo, config, singledl_config = {}, multitorrent=None, doneflag=None):
+    def __init__(self, taskid, metainfo, config, singledl_config = {}, multitorrent=None, doneflag=None):
         self._logger = logging.getLogger(self.__class__.__name__)
 
+        self.taskid = taskid
         self.doneflag = doneflag
         self.metainfo = metainfo
 
@@ -416,8 +421,8 @@ class DL(Feedback):
         self.time_after_seeding = 0
 
     def run(self):
-        self.d = HeadlessDisplayer(self.doneflag)
-        self.status_reporter = StatusReporter(report_peer_status_url)
+        self.d = HeadlessDisplayer(self.taskid, self.doneflag)
+        self.status_reporter = StatusReporter(self.taskid, report_peer_status_url)
 
         try:
             self._logger.info('DL.run.Multitorrent')
@@ -565,7 +570,7 @@ class MultiDL():
             pass
 
         self._logger.info("persitent tasks count=%d", len(tsks))
-	i = 0
+        i = 0
         for hash_info, task in tsks.items():
             expire = task['expire'] - (int(time.time()) - task['begintime'])
             if expire <= 0:
@@ -575,7 +580,7 @@ class MultiDL():
             self._logger.info("reload task in %.2fsec later. task:%s", delay, task)
             try:
                 self.multitorrent.rawserver.add_task(self.add_task, delay, 
-                                                     args=(task['torrentfile'], task['config'], hash_info, False, expire))
+                     args=(task.get('taskid'), task['torrentfile'], task['config'], hash_info, False, expire))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
 
@@ -590,7 +595,7 @@ class MultiDL():
         except Exception as e:
             self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
 
-    def add_task(self, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True, expire = 0):
+    def add_task(self, taskid, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True, expire = 0):
         if sha1 and self.dls.has_key(sha1):
             self._logger.error('sha1: %s is already downloading', sha1)
             return self.dls[sha1][0]
@@ -608,11 +613,11 @@ class MultiDL():
         else:
             raise BTFailure(_("you must specify a .torrent file"))
 
-        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
+        dl = DL(taskid, metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
         dl.start()
 
         expire = self.expire_time if expire <= 0 else expire
-        self.tasks[dl.hash_info] = {'torrentfile': torrentfile, 'status':{},'config':singledl_config,
+        self.tasks[dl.hash_info] = {'taskid': taskid, 'torrentfile': torrentfile, 'status':{},'config':singledl_config,
                                     'begintime': int(time.time()), 'expire': expire}
         self.dls[dl.hash_info] = (dl, torrentfile)
         if is_persitent_tasks:
