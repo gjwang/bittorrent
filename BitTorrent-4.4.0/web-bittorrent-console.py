@@ -358,7 +358,7 @@ class StatusReporter(object):
 
     def send_finished(self, ignored):
         self.send_seedstatus_ok = True        
-        self._logger.info("send seeding status to %s success", self.report_url)
+        self._logger.info("send %s status to %s success", self.status, self.report_url)
 
     def cb_response(self, response):
         #print 'Response version:', response.version
@@ -525,7 +525,12 @@ class DL(Feedback):
     def finished(self, torrent):
         self._logger.info('download finished')
         self.d.finished()
-        self.get_status()
+
+        status = self.torrent.get_status(self.config['spew'])
+        self.activity = status.get('activity')
+        self.d.display(status)
+        self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
+        self.time_after_seeding +=1
 
 class MultiDL():
     def __init__(self, config):
