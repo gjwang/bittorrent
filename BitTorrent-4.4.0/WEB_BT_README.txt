@@ -9,6 +9,19 @@ bt部署方法：
      以上1,2为python通用安装工具， twisted为bt依赖的库
            安装twisted: pip install twisted  或者 easy_install twisted
            通过这两个工具安装twisted， 正常情况下能自动解决其他依赖库，否则需要手动安装twisted依赖的其他库
+
+二，系统设置
+    为了安全建议将本软件运行在普通权限（非root）账号下。
+
+    如果是普通账号运行本软件，需要对系统做以下修改：
+    修改os最大打开文件数限制。
+    修改方式：
+    打开 /etc/security/limits.conf 
+    添加以下两行（将nofile限制修改到10万以上）
+    *                soft    nofile          102400                                                                                                      
+    *                hard    nofile          102400 
+
+
 二，BT软件配置
        打开bt软件下的conf.py  文件， 需要配置的有：
       bt_user = 'bt_ysten'                          #本节点用户名（未启用），
