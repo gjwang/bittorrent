@@ -574,7 +574,7 @@ class MultiDL():
         except Exception as e:
             pass
 
-        self._logger.info("persitent tasks count=%d", len(tsks))
+        self._logger.info("persistent tasks count=%d", len(tsks))
         i = 0
         tasks_len = len(tsks)
         for hash_info, task in tsks.items():
@@ -601,7 +601,7 @@ class MultiDL():
         except Exception as e:
             self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
 
-    def add_task(self, taskid, torrentfile, singledl_config = {}, sha1=None, is_persitent_tasks = True, expire = 0):
+    def add_task(self, taskid, torrentfile, singledl_config = {}, sha1=None, is_persistent_tasks = True, expire = 0):
         if sha1 and self.dls.has_key(sha1):
             self._logger.error('sha1: %s is already downloading', sha1)
             return self.dls[sha1][0]
@@ -626,7 +626,7 @@ class MultiDL():
         self.tasks[dl.hash_info] = {'taskid': taskid, 'torrentfile': torrentfile, 'status':{},'config':singledl_config,
                                     'begintime': int(time.time()), 'expire': expire}
         self.dls[dl.hash_info] = (dl, torrentfile)
-        if is_persitent_tasks:
+        if is_persistent_tasks:
             self.persistent_tasks(self.tasks)
         return dl
         
@@ -765,7 +765,7 @@ if __name__ == '__main__':
     #observer = log.PythonLoggingObserver(loggerName='web-bittorrent-console') 
     #observer.start()
     #log.startLogging(DailyLogFile.fromFullPath(logfile))
-    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=15)
+    logHandler = TimedRotatingFileHandler(filename=logfile, when='midnight', interval=1, backupCount=7)
     logFormatter = logging.Formatter('%(asctime)s %(message)s')
     logHandler.setFormatter( logFormatter )
     logger = logging.getLogger()
