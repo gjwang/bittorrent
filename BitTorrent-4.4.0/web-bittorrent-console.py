@@ -502,7 +502,7 @@ class DL(Feedback):
         elif self.activity == 'seeding' or self.activity == 'download succeeded':
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
-            self.interval = min(30*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
+            self.interval = min(60*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
             self._logger.info("status: %s, get status in %s seconds later\n\n", self.activity, self.interval)
         else:
             self.interval = self.config['display_interval']
@@ -547,7 +547,7 @@ class MultiDL():
         self.persistent_file = persistent_tasks_file
         self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
-        self.check_expire_interval = 3600
+        self.check_expire_interval = 1800
         self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
 
     #def __enter__(self):
@@ -576,21 +576,22 @@ class MultiDL():
 
         self._logger.info("persitent tasks count=%d", len(tsks))
         i = 0
+        tasks_len = len(tsks)
         for hash_info, task in tsks.items():
             expire = task['expire'] - (int(time.time()) - task['begintime'])
             if expire <= 0:
                 self._logger.info("task expire time=%s, do not reload. %s", -expire, task)
                 continue
             delay = i/3.0
+            i += 1
+            persistent_task = True if i == tasks_len else False
+
             self._logger.info("reload task in %.2fsec later. task:%s", delay, task)
             try:
                 self.multitorrent.rawserver.add_task(self.add_task, delay, 
-                     args=(task.get('taskid'), task['torrentfile'], task['config'], hash_info, False, expire))
+                     args=(task.get('taskid'), task['torrentfile'], task['config'], hash_info, persistent_task, expire))
             except Exception as e:
                 self._logger.error("reload task:%s Exception: %s", task, str(e))
-
-            i += 1
-        #self.persistent_tasks(self.tasks)
 
     def persistent_tasks(self, tasks):
         self._logger.info("pickle.dump tasks_count=%d",len(tasks))
