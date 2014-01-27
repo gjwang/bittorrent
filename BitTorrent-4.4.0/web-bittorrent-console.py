@@ -66,7 +66,21 @@ from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorr
 from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port
 from conf import logfile, persistent_tasks_file, task_expire_time
 
+def check_runtime_env():
+    import resource
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    min_limit =  10240
+    if soft < min_limit or hard < min_limit:
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (min_limit, min_limit))
+        except Exception as e:
+            print "os max open files limit(soft=%d, hard=%d) less than (soft=%s, hard=%s). and %s" % \
+                   (soft, hard, min_limit, min_limit, str(e))
+            print "Please raise maximum limit to fix it!\nstart failed. exit!"
+            exit(0)            
 
+
+check_runtime_env()
 
 def fmttime(n):
     if n == 0:
