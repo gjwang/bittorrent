@@ -232,11 +232,11 @@ def rmfile_and_emptypath(task, msg, request):
     topdir = args.get('wwwroot') or wwwroot #global var wwwroot
     localname = args.get('filename')
 
-    if localname is None:
-        if torrentfileurl is None:
+    if localname is None or localname == '':
+        if torrentfileurl is None or torrentfileurl == '':
             msg['result'] = 'failed'
             msg['traceback'] = "not specify delete file"
-            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
+            logger.error('rm file failed: %s', msg['traceback'])
             return_request(request, msg)            
             return 
 
@@ -253,14 +253,14 @@ def rmfile_and_emptypath(task, msg, request):
             try:
                 os.remove(f)
                 msg['result'] = 'success'
-                logger.info('rmfile_and_emptypath: rm %s success', f)
+                logger.info('rm file success: %s', f)
             except OSError as ex:
                 msg['result'] = 'failed'
                 msg['traceback'] += "rmfile %s failed: %s; "%(f, ex)
-                logger.error('rmfile_and_emptypath: %s', msg['traceback'])
+                logger.error('rm file failed: %s', msg['traceback'])
         else:
-            msg['traceback'] += '%s not exists; '% f
-            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
+            msg['traceback'] += 'file %s not exists; '% f
+            logger.error('rm file failed: %s ', msg['traceback'])
 
     #rm empty dir, avoid empty 'holes'
     try:
@@ -270,8 +270,8 @@ def rmfile_and_emptypath(task, msg, request):
             pass
         else:
             msg['result'] = 'failed'
-            msg['traceback'] += "rmdir exception: %s"% ex
-            logger.error('rmfile_and_emptypath: %s', msg['traceback'])
+            msg['traceback'] += "rmdir %s exception: %s"% (dirname(localname), ex)
+            logger.error('rm dir failed: %s', msg['traceback'])
 
     return_request(request, msg)
     
