@@ -134,6 +134,7 @@ class AsyncDownloader():
                     msg["args"]["percent"] = 100
     
                 msg['result'] = 'success'
+                msg['status'] = status
                 msg['traceback'] = 'sha1:%s is already %s' % (sha1, status)
 
                 self._logger.error(msg['traceback'])
@@ -147,6 +148,7 @@ class AsyncDownloader():
                         msg["args"]["percent"] = 100
 
                     msg['result'] = 'success'
+                    msg['status'] = status
                     msg['traceback'] = 'file:%s is already %s' % (self.localtorrentfile,  status)
 
                     self._logger.error(msg['traceback'])
