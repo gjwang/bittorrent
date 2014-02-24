@@ -179,6 +179,7 @@ class AsyncDownloader():
 
             self._logger.error(msg['traceback'])
 
+	self._logger.info('addtask response: %s', msg)	
         self.return_request(self.request, msg)
 
 
