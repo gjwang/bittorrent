@@ -370,7 +370,7 @@ class StatusReporter(object):
     def send_finished(self, ignored, status_msg):
         self.send_seedstatus_ok = True        
         self._logger.info("sha1: %s, send status: %s to %s success",
-			   status_msg['sha1'], status_msg['status'], self.report_url)
+			   status_msg['args']['sha1'], status_msg['status'], self.report_url)
 
     def cb_response(self, response, status_msg):
         #print 'Response version:', response.version
