@@ -290,7 +290,6 @@ class BeginningPrinter(Protocol):
 
     def connectionLost(self, reason):
         self._logger.info('received: %s', self.recv)
-        #print 'Finished receiving body:', reason.getErrorMessage()
         if self.recv == 'success':            
             self.finished.callback(None)
 
@@ -317,8 +316,8 @@ class StatusReporter(object):
         self.retries = 0
 
     def send_status(self, statistics, torrentfile=None, sha1=None):
-        activity = statistics.get('activity')
-        self.status = activity
+        self.status = statistics.get('activity')
+
         if self.send_seedstatus_ok:
             #make sure seeding status been reported success at least once
             #if success report seeding status, then stop to repeat report it
@@ -335,9 +334,7 @@ class StatusReporter(object):
             status_msg = copy.deepcopy(self.status_msg)
             status_msg["taskid"] = self.taskid
             status_msg["event"]  = "status_response"
-
-            if activity is not None:
-                status_msg["status"] = activity
+            status_msg["status"] = self.status or ''
                 
             #status_msg["result"] = "success",          #success, failed
             #"trackback": "",         #failed cause
@@ -367,37 +364,41 @@ class StatusReporter(object):
                 #status_msg["args"]["seedstatus"] = self.seedStatus
 
             self._logger.info('send_status: %s', status_msg)
-            self.send(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
+            self.send(status_msg)
 
 
-    def send_finished(self, ignored):
+    def send_finished(self, ignored, status_msg):
         self.send_seedstatus_ok = True        
-        self._logger.info("send %s status to %s success", self.status, self.report_url)
+        self._logger.info("sha1: %s, send status: %s to %s success",
+			   status_msg['sha1'], status_msg['status'], self.report_url)
 
-    def cb_response(self, response):
+    def cb_response(self, response, status_msg):
         #print 'Response version:', response.version
-        self._logger.info('Response code: %s', response.code)
+	status = status_msg['status']
+	sha1 = status_msg['args']['sha1']
+        self._logger.info('sha1: %s, send status: %s, Response code: %s', sha1, status, response.code)
         #print 'Response phrase:', response.phrase
         #print 'Response headers:'
         #from pprint import pformat
         #print pformat(list(response.headers.getAllRawHeaders()))
         if response.code == 200:
             self.retries = 0
-            if self.status == 'seeding' or self.status == 'download succeeded':
+            if status == 'seeding' or status == 'download succeeded':
                 finished = Deferred()
-                finished.addCallback(self.send_finished)
+                finished.addCallback(self.send_finished, status_msg)
                 response.deliverBody(BeginningPrinter(finished))
         else:
             self.retries += 1
-            self._logger.error("send status to %s failed, response_code: %s, retries: %s", 
-                                self.report_url, response.code, self.retries)
+            self._logger.error("sha1: %s, send status: %s to %s failed, response_code: %s, retries: %s", 
+                                sha1, status, self.report_url, response.code, self.retries)
 
-    def cb_error_response(self, error):
+    def cb_error_response(self, error, status_msg):
         self.retries += 1
-        self._logger.error("send status to %s failed, error: %s, retries: %s", self.report_url, str(error), self.retries)
+        self._logger.error("sha1: %s, send status: %s to %s failed, error: %s, retries: %s",
+			    status_msg['args']['sha1'], status_msg['status'], self.report_url, str(error), self.retries)
 
-    def send(self, status):
-        body = StringProducer(status)
+    def send(self, status_msg):
+        body = StringProducer(json.dumps(status_msg, indent=4, sort_keys=True, separators=(',', ': ')))
         d = self.agent.request(
             'POST',
             self.report_url,
@@ -405,8 +406,8 @@ class StatusReporter(object):
                      'Content-Type': ['application/json']}),
             body)
 
-        d.addCallback(self.cb_response)
-        d.addErrback(self.cb_error_response)
+        d.addCallback(self.cb_response, status_msg)
+        d.addErrback(self.cb_error_response, status_msg)
 
 
 class DL(Feedback):
@@ -505,10 +506,22 @@ class DL(Feedback):
             return
 
         status = self.torrent.get_status(self.config['spew'])
-        self.activity = status.get('activity')
+        activity = status.get('activity')
+        if activity == 'seeding' or activity == 'download succeeded':
+            self.activity = 'seeding'
+        elif activity == 'downloading' or activity == 'Initial startup' or activity == 'checking existing file':
+            self.activity = 'downloading'
+        else:
+            self._logger.error('get_status: what the fuck status= %s', activity)
+            self.activity = activity
 
         self.d.display(status)
-        self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
+
+        if activity == 'Initial startup' or activity == 'checking existing file':
+	    self._logger.info('skip send status=%s', activity)
+	    pass
+	else:
+            self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
         
         if self.status_reporter.retries:
             self.interval = min(60*15, self.config['display_interval']*2**self.status_reporter.retries)
@@ -517,7 +530,8 @@ class DL(Feedback):
             #reduce the frequency of getting seeding status 
             self.time_after_seeding +=1
             self.interval = min(60*60, max(self.interval, self.config['display_interval']*2**self.time_after_seeding))
-            self._logger.info("status: %s, get status in %s seconds later\n\n", self.activity, self.interval)
+            self._logger.info("status: %s, get status in %s seconds later, times_after_seeding=%s\n\n", 
+			self.activity, self.interval, self.time_after_seeding)
         else:
             self.interval = self.config['display_interval']
             self._logger.info("status: %s, get status in %s seconds later\n\n", self.activity, self.interval)
@@ -537,11 +551,14 @@ class DL(Feedback):
         self.doneflag.set()
 
     def finished(self, torrent):
-        self._logger.info('download finished')
         self.d.finished()
 
         status = self.torrent.get_status(self.config['spew'])
-        self.activity = status.get('activity')
+
+        activity = status.get('activity')
+	self.activity = 'seeding' if activity == 'download succeeded' else activity
+        self._logger.info('download finished: status=%s', activity)
+
         self.d.display(status)
         self.status_reporter.send_status(status, self.torrentfile, self.hash_info)
         self.time_after_seeding +=1
