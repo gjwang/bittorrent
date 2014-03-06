@@ -35,7 +35,9 @@ md5 = hashlib.md5
 
 import json
 import cgi
-from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password, AM_I_MK_METAINFO_SERVER
+from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
+
+from conf import MAX_MAKETORRENT_TASKS, AM_I_MK_METAINFO_SERVER
 
 bt_password = md5(bt_password).hexdigest()
 
@@ -365,6 +367,8 @@ class PutTask(Resource):
 
 class MakeTorrent(Resource):
     tasknum = 0
+    concurrent = 0
+
     def __init__(self, multidl):
         self._logger = logging.getLogger(self.__class__.__name__)
 
@@ -379,6 +383,10 @@ class MakeTorrent(Resource):
     def return_request(self, request, msg):
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         request.write(msg)
+
+	self.concurrent = self.concurrent - 1 if self.concurrent > 0 else self.concurrent
+        self._logger.info('left maketorrent concurrent = %d', self.concurrent)
+
         request.finish()
 
     def maketorrent(self, filename, request, msg):
@@ -540,6 +548,17 @@ class MakeTorrent(Resource):
                     msg['traceback'] = "Get filesize error: %s" % error
                     self.return_request(request, msg)
 
+		if self.concurrent + 1 > MAX_MAKETORRENT_TASKS:
+                    msg['result'] = 'failed'
+                    msg['traceback'] = "To many(>%d) maketorrent being run" % MAX_MAKETORRENT_TASKS
+                    self._logger.error("maketorrent_response: %s", msg['traceback'])
+                    msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+                    return msg
+
+
+                self.concurrent += 1
+                self._logger.info('add maketorrent concurrent = %d', self.concurrent)
+
                 d.addCallback(cbRequest)
                 d.addErrback(cbErrRequest)
                 
@@ -575,10 +594,10 @@ class MakeTorrent(Resource):
     def download_done(self, context, filename, request, msg):
         if getsize(filename) != msg['args']['filesize']:
             #TODO: should redownload the file
-            self._logger.error("download: %s failed, filesize(%d)!=response.length(%d)", 
+            self._logger.error("download: %s failed: filesize(%d)!=response.length(%d)", 
                                 filename, getsize(filename), msg['args']['filesize'])
             msg['result'] = 'failed'
-            msg['traceback'] = "download: %s failed, but filesize(%d)!=response.length(%d)" % (filename, getsize(filename), msg['args']['filesize'])
+            msg['traceback'] = "download: %s failed: filesize(%d)!=response.length(%d)" % (filename, getsize(filename), msg['args']['filesize'])
             self.return_request(request, msg)
             return
         else:
@@ -591,7 +610,8 @@ class MakeTorrent(Resource):
             msg = copy.deepcopy(self.response_msg)#make a new copy of response_msg        
         msg['result'] = 'failed'         
         msg['traceback'] = "%s" % str(error)
-        self._logger.error(msg['traceback'])
+        self._logger.error('download failed: result=%s, filename=%s, traceback=%s',
+				 msg['result'], msg['args']['filename'], msg['traceback'])
 
         self.return_request(request, msg)
                
