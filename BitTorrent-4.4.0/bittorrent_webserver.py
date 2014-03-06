@@ -550,7 +550,7 @@ class MakeTorrent(Resource):
 
 		if self.concurrent + 1 > MAX_MAKETORRENT_TASKS:
                     msg['result'] = 'failed'
-                    msg['traceback'] = "To many(>%d) maketorrent being run" % MAX_MAKETORRENT_TASKS
+                    msg['traceback'] = "Too many(>%d) maketorrent instances running" % MAX_MAKETORRENT_TASKS
                     self._logger.error("maketorrent_response: %s", msg['traceback'])
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
