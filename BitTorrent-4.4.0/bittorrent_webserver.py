@@ -104,7 +104,13 @@ class AsyncDownloader():
     def return_request(self, request, msg):
         msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
         request.write(msg)
-        request.finish()
+
+        try:
+            request.finish()
+        except Exception as e:
+            #connection maybe already lost
+            self._logger.info('AsyncDownloader return_request exception: %s', e)
+
 
     def download_done(self, context, msg):
         if self.localtorrentfile:
@@ -387,7 +393,12 @@ class MakeTorrent(Resource):
 	self.concurrent = self.concurrent - 1 if self.concurrent > 0 else self.concurrent
         self._logger.info('left maketorrent concurrent = %d', self.concurrent)
 
-        request.finish()
+	try:
+            request.finish()
+	except Exception as e:
+	    #connection maybe already lost
+	    self._logger.info('maketorrent return_request exception: %s, filename:%s',
+				 e, msg['args'].get('filename'))	
 
     def maketorrent(self, filename, request, msg):
         self._logger.debug('Going to make torrent: %s', filename)
@@ -585,24 +596,27 @@ class MakeTorrent(Resource):
         if not os.path.exists(dirname(localfilename)):
             os.makedirs(dstdirname)
 
-        self._logger.info("Going to download %s to %s", fileurl, localfilename)
+	tmpfile = localfilename + '.tmp'
+        self._logger.info("Going to download %s to tmpfile=%s", fileurl, tmpfile)
 
-        deferred = downloadPage(bytes(fileurl), localfilename)
-        deferred.addCallback(self.download_done, localfilename, request, msg)
+        deferred = downloadPage(bytes(fileurl), tmpfile)
+        deferred.addCallback(self.download_done, localfilename, tmpfile, request, msg)
         deferred.addErrback(self.error_handler, request, msg)
 
-    def download_done(self, context, filename, request, msg):
-        if getsize(filename) != msg['args']['filesize']:
+    def download_done(self, context, filename, tmpfile, request, msg):
+        if getsize(tmpfile) != msg['args']['filesize']:
             #TODO: should redownload the file
             self._logger.error("download: %s failed: filesize(%d)!=response.length(%d)", 
-                                filename, getsize(filename), msg['args']['filesize'])
+                                tmpfile, getsize(tmpfile), msg['args']['filesize'])
             msg['result'] = 'failed'
-            msg['traceback'] = "download: %s failed: filesize(%d)!=response.length(%d)" % (filename, getsize(filename), msg['args']['filesize'])
+            msg['traceback'] = "download: %s failed: filesize(%d)!=response.length(%d)" % (tmpfile, getsize(tmpfile), msg['args']['filesize'])
             self.return_request(request, msg)
             return
         else:
-            self._logger.info("download: %s done, and filesize(%d)=response.length", filename, getsize(filename))
+            self._logger.info("download: %s done, and filesize(%d)=response.length", tmpfile, getsize(tmpfile))
 
+	self._logger.debug("rename %s to %s", tmpfile, filename)
+	os.rename(tmpfile, filename)
         self.maketorrent(filename, request, msg)
 
     def error_handler(self, error, request, msg = None):
