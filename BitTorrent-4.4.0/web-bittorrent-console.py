@@ -69,7 +69,7 @@ from conf import logfile, persistent_tasks_file, task_expire_time
 def check_runtime_env():
     import resource
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    min_limit =  10240
+    min_limit =  102400
     if soft < min_limit or hard < min_limit:
         try:
             resource.setrlimit(resource.RLIMIT_NOFILE, (min_limit, min_limit))
@@ -368,6 +368,7 @@ class StatusReporter(object):
 
 
     def send_finished(self, ignored, status_msg):
+        self.retries = 0
         self.send_seedstatus_ok = True        
         self._logger.info("sha1: %s, send status: %s to %s success",
 			   status_msg['args']['sha1'], status_msg['status'], self.report_url)
