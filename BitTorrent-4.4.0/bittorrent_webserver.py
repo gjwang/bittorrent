@@ -168,8 +168,7 @@ class AsyncDownloader():
 
                 dl_config = {}
                 dl_config['save_as'] = self.localfilename
-                #add_dl would start to download
-                #dl = self.multidl.add_dl(torrentfile=self.localtorrentfile, singledl_config = dl_config)
+
                 dl = self.multidl.add_task(msg.get('taskid'), torrentfile=self.localtorrentfile,
                                            singledl_config = dl_config, sha1=sha1)
 
@@ -615,9 +614,19 @@ class MakeTorrent(Resource):
         else:
             self._logger.info("download: %s done, and filesize(%d)=response.length", tmpfile, getsize(tmpfile))
 
-	self._logger.debug("rename %s to %s", tmpfile, filename)
+	self._logger.info("rename %s to %s", tmpfile, filename)
 	os.rename(tmpfile, filename)
-        self.maketorrent(filename, request, msg)
+
+	if getsize(filename) == msg['args']['filesize']:
+            self.maketorrent(filename, request, msg)
+        else:
+            #TODO: should redownload the file
+            self._logger.error("rename: %s filesize change: filesize(%d)!=response.length(%d)",
+                                filename, getsize(filename), msg['args']['filesize'])
+            msg['result'] = 'failed'
+            msg['traceback'] = "download: %s failed: filesize(%d)!=response.length(%d)" % (filename, getsize(filename), msg['args']['filesize'])
+            self.return_request(request, msg)
+            return            
 
     def error_handler(self, error, request, msg = None):
         if msg is None:
