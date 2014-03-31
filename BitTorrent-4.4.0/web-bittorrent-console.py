@@ -64,7 +64,7 @@ import cgi
 
 from bittorrent_webserver import FormPage, Ping, PutTask, ShutdownTask, MakeTorrent
 from conf import report_peer_status_url, response_msg, downloader_config, bt_remote_ctrl_listen_port
-from conf import logfile, persistent_tasks_file, task_expire_time
+from conf import logfile, persistent_tasks_file, task_expire_time, MAX_DOWNLOADING_TASKS, MAX_SEEDING_TASKS
 
 def check_runtime_env():
     import resource
@@ -616,7 +616,9 @@ class MultiDL():
                 continue
             delay = i/3.0
             i += 1
-            persistent_task = True if i == tasks_len else False
+
+            #persistent_task = True if i == tasks_len else False
+            persistent_task = i==tasks_len
 
             self._logger.info("reload task in %.2fsec later. task:%s", delay, task)
             try:
@@ -633,7 +635,45 @@ class MultiDL():
         except Exception as e:
             self._logger.error("persistent_tasks :%s Exception: %s", tasks, str(e))
 
+    def restart_task(self, sha1, torrentfile = None):
+        pass
+
+    def check_whether_can_add_task(self):
+	'''
+            would raise Exception if can not add task
+	    prevent running too many tasks, to protect the system
+	'''
+
+	downloading_tasks = 0
+	if downloading_tasks >= MAX_DOWNLOADING_TASKS:
+	    raise Exception("Too many(%d) downloading tasks running"%downloading_tasks) 
+
+	tasks_count = len(self.tasks)#downloading and seeding tasks
+        if tasks_count > (MAX_DOWNLOADING_TASKS + MAX_SEEDING_TASKS)*0.9:
+	    self._logger.info("downloading(%s) and seeding(%s) tasks reach %d, do del_expire_tasks",
+			       downloading_tasks, tasks_count - downloading_tasks, tasks_count)
+	    self.del_expire_tasks()
+        else:
+	    return
+
+	tasks_count = len(self.tasks)
+        if tasks_count >= (MAX_DOWNLOADING_TASKS + MAX_SEEDING_TASKS) - 1:
+            #TODO: del longgest seeding task
+            self._logger.info("downloading(%s) and seeding(%s) tasks reach %d, TODO: del longgest seeding task",
+                               downloading_tasks, tasks_count - downloading_tasks, tasks_count)
+            pass
+        else:
+	    return
+
+	tasks_count = len(self.tasks)
+        if tasks_count >= MAX_DOWNLOADING_TASKS + MAX_SEEDING_TASKS:
+            raise Exception("Too many downloading(%s) and seeding(%d) tasks running"%(downloading_tasks, tasks_count))
+
+
     def add_task(self, taskid, torrentfile, singledl_config = {}, sha1=None, is_persistent_tasks = True, expire = 0):
+	'''
+	    would raise Exception if something is wrong
+	'''
         if sha1 and self.dls.has_key(sha1):
             self._logger.error('sha1: %s is already downloading', sha1)
             return self.dls[sha1][0]
@@ -651,6 +691,8 @@ class MultiDL():
         else:
             raise BTFailure(_("you must specify a .torrent file"))
 
+	self.check_whether_can_add_task()
+
         dl = DL(taskid, metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
         dl.start()
 
@@ -663,18 +705,18 @@ class MultiDL():
         return dl
         
 
-    def add_dl(self, torrentfile, singledl_config = {}):
-        if torrentfile is not None:
-            metainfo, errors = GetTorrent.get(torrentfile)
-            if errors:
-                raise BTFailure(_("Error reading .torrent file: ") + '\n'.join(errors))
-        else:
-            raise BTFailure(_("you must specify a .torrent file"))
+    #def add_dl(self, torrentfile, singledl_config = {}):
+    #    if torrentfile is not None:
+    #        metainfo, errors = GetTorrent.get(torrentfile)
+    #        if errors:
+    #            raise BTFailure(_("Error reading .torrent file: ") + '\n'.join(errors))
+    #    else:
+    #        raise BTFailure(_("you must specify a .torrent file"))
 
-        dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
-        dl.start()
-        self.dls[dl.hash_info] = (dl, torrentfile)
-        return dl
+    #    dl = DL(metainfo, self.config, singledl_config, self.multitorrent, self.doneflag)
+    #    dl.start()
+    #    self.dls[dl.hash_info] = (dl, torrentfile)
+    #    return dl
 
     def listen_forever(self):
         self.multitorrent.rawserver.install_sigint_handler()
