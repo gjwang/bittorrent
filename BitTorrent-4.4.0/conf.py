@@ -17,7 +17,10 @@ report_peer_status_url = 'http://127.0.0.1:8200/report_peerstatus'
 logfile = 'log/web-bittorrent-console.log'
 persistent_tasks_file = 'tasks.pkl'
 task_expire_time = 48*3600   #48hours
+
 MAX_MAKETORRENT_TASKS = 10
+MAX_DOWNLOADING_TASKS = 10
+MAX_SEEDING_TASKS = 300 
 
 #template, should translate into json before response
 #task template
