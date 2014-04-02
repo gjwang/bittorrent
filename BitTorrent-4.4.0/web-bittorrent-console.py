@@ -667,7 +667,7 @@ class MultiDL():
 
 	tasks_count = len(self.tasks)
         if tasks_count >= MAX_DOWNLOADING_TASKS + MAX_SEEDING_TASKS:
-            raise Exception("Too many downloading(%s) and seeding(%d) tasks running"%(downloading_tasks, tasks_count))
+            raise Exception("Too many downloading(%s) and seeding(%d) tasks running", downloading_tasks, tasks_count)
 
 
     def add_task(self, taskid, torrentfile, singledl_config = {}, sha1=None, is_persistent_tasks = True, expire = 0):
