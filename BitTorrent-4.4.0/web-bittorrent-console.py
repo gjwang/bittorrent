@@ -580,7 +580,7 @@ class MultiDL():
         self.multitorrent.rawserver.add_task(self.reload_tasks, 0)
 
         self.check_expire_interval = 1800
-        self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
+        self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval, (True, ))
 
     #def __enter__(self):
     #    print '__enter__'
@@ -770,7 +770,7 @@ class MultiDL():
         #self.d.error(text)
         self._logger.error(text)
 
-    def del_expire_tasks(self):
+    def del_expire_tasks(self, run_again=False):
         try:
             del_tasks=[]
             for hash_info, task in self.tasks.items():
@@ -787,7 +787,8 @@ class MultiDL():
 
         self._logger.info("check expire tasks in %s seconds later, tasks_left=%s", 
                            self.check_expire_interval, len(self.tasks))
-        self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval)
+        if run_again:
+            self.multitorrent.rawserver.add_task(self.del_expire_tasks, self.check_expire_interval, (True,))
 
 def main(logger):
     root = Resource()
