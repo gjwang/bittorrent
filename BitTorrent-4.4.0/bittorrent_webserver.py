@@ -24,6 +24,7 @@ from twisted.internet import reactor
 
 import os
 import copy
+import time
 import urllib2
 from urlparse import urlsplit
 from os.path import join, dirname, basename, normpath, splitext, getsize, dirname
@@ -37,7 +38,7 @@ import json
 import cgi
 from conf import wwwroot, maketorent_config, response_msg, http_prefix, node_domain, bt_user, bt_password
 
-from conf import MAX_MAKETORRENT_TASKS, AM_I_MK_METAINFO_SERVER
+from conf import MAX_MAKETORRENT_TASKS, AM_I_MK_METAINFO_SERVER, MAX_MAKING_TORRENT_TIME
 
 bt_password = md5(bt_password).hexdigest()
 
@@ -384,13 +385,22 @@ class MakeTorrent(Resource):
         self.maketorent_config = maketorent_config
         self.http_prefix = http_prefix
         self.response_msg = response_msg
+	
+        #TODO: persist the making torrent tasks, and del the expire tasks
+	self.makingtorrent_tasks = {}
 
     def return_request(self, request, msg):
-        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
-        request.write(msg)
+        msg_json = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))        
+        request.write(msg_json)
 
 	self.concurrent = self.concurrent - 1 if self.concurrent > 0 else self.concurrent
-        self._logger.info('left maketorrent concurrent = %d', self.concurrent)
+
+        try:
+            del self.makingtorrent_tasks[msg['args'].get('filename')]
+        except Exception as e:
+	    self._logger.exception('del making torrent task exeption: %s', msg['args'].get('filename'))
+
+        self._logger.info('left maketorrent concurrent=%d, tasks_count=%d', self.concurrent, len(self.makingtorrent_tasks))
 
 	try:
             request.finish()
@@ -398,6 +408,7 @@ class MakeTorrent(Resource):
 	    #connection maybe already lost
 	    self._logger.info('maketorrent return_request exception: %s, filename:%s',
 				 e, msg['args'].get('filename'))	
+
 
     def maketorrent(self, filename, request, msg):
         self._logger.debug('Going to make torrent: %s', filename)
@@ -495,7 +506,7 @@ class MakeTorrent(Resource):
                     msg['result'] = 'failed'
                     msg['traceback'] = "undefine fileurl in args"
 
-                    self._logger.info("maketorrent_response: %s", msg['traceback'])
+                    self._logger.info("maketorrent_response: %s", msg)
 
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
@@ -505,7 +516,7 @@ class MakeTorrent(Resource):
 		    msg['result'] = 'failed'
                     msg['traceback'] = "trackers must be json array"
 
-                    self._logger.info("maketorrent_response: %s", msg['traceback'])
+                    self._logger.info("maketorrent_response: %s", msg)
 
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg 
@@ -521,7 +532,7 @@ class MakeTorrent(Resource):
                 else:
                     msg['result'] = 'failed'
                     msg['traceback'] = "uneffective url path or undefine filename"
-                    self._logger.info("maketorrent_response: %s", msg['traceback'])
+                    self._logger.info("maketorrent_response: %s", msg)
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
                     
@@ -555,16 +566,31 @@ class MakeTorrent(Resource):
                     
                 def cbErrRequest(error):
                     msg['result'] = 'failed'
-                    msg['traceback'] = "Get filesize error: %s" % error
+                    msg['traceback'] = "maketorrent error: %s" % error
                     self.return_request(request, msg)
 
 		if self.concurrent + 1 > MAX_MAKETORRENT_TASKS:
                     msg['result'] = 'failed'
                     msg['traceback'] = "Reached max(%s) maketorrent concurrent" % MAX_MAKETORRENT_TASKS
-                    self._logger.error("maketorrent_response: %s", msg['traceback'])
+                    self._logger.error("maketorrent_response: %s", msg)
                     msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                     return msg
-
+		
+                #not allow download the same fileurl in the same time, to prevent corrupt data
+		tasks = self.makingtorrent_tasks.get(localfilename)
+		if tasks:
+		    if int(time.time()) > tasks['expire']:
+                        #TODO: restart the maketorrent
+                        self.makingtorrent_tasks[fileurl]['expire'] = int(time.time()) + MAX_MAKING_TORRENT_TIME
+                    else:
+		        msg['result'] = 'failed' #msg['result'] = 'makingtorrent'?
+                        msg['traceback'] = "fileurl=%s is already in %s" % (fileurl, tasks['status'])
+                        self._logger.error("maketorrent_response: %s", msg)
+                        msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
+                        return msg
+		else:
+                    self.makingtorrent_tasks[localfilename] = {'status':'makingtorrent', 
+							     'expire':int(time.time()) + MAX_MAKING_TORRENT_TIME}
 
                 self.concurrent += 1
                 self._logger.info('add maketorrent concurrent = %d', self.concurrent)
@@ -576,14 +602,14 @@ class MakeTorrent(Resource):
             except Exception as e:
                 msg['result'] = 'failed'
                 msg['traceback'] = "Exception: %s" % str(e)
-                self._logger.exception("maketorrent_response: %s", msg['traceback'])
+                self._logger.exception("maketorrent_response: %s", msg)
                 msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
                 return msg
         else:  
             #msg = {}
             msg['result'] = 'failed'
             msg['traceback'] = "unknown event: %s" % event
-            self._logger.error("maketorrent_response: %s", msg['traceback'])
+            self._logger.error("maketorrent_response: %s", msg)
             msg = json.dumps(msg, indent=4, sort_keys=True, separators=(',', ': '))
             return msg
 
