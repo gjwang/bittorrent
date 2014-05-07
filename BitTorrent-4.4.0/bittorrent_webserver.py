@@ -99,7 +99,7 @@ class AsyncDownloader():
                 self.localtorrentfile = splitext(self.url)[0]
             
         self.msg['args']['filenmae'] = self.localfilename
-        self.msg['args']['fileurl'] = self.localfilename.replace(self.topdir, self.node_domain)
+        self.msg['args']['fileurl'] = join(self.node_domain, self.localfilename[len(self.topdir):])
         self.msg['args']['torrentfile'] =  self.localtorrentfile
 
     def return_request(self, request, msg):
