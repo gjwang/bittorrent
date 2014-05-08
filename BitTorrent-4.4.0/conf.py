@@ -20,7 +20,8 @@ task_expire_time = 48*3600   #48hours
 
 MAX_MAKETORRENT_TASKS = 10
 MAX_DOWNLOADING_TASKS = 10
-MAX_SEEDING_TASKS = 300 
+MAX_SEEDING_TASKS = 500 
+MAX_MAKING_TORRENT_TIME = 20*60 #seconds
 
 #template, should translate into json before response
 #task template
