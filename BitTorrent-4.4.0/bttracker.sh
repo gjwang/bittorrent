@@ -13,7 +13,7 @@
 
 startup()
 {
-    nohup python bittorrent-tracker.py --port 80 --dfile downloaders.log --reannounce_interval 120 &
+    nohup python bittorrent-tracker.py --port 80 --dfile downloaders.log --reannounce_interval 120 >/dev/null 2>&1 &
 }
 
 shutdown()
